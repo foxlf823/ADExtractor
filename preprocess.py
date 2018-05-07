@@ -1,0 +1,140 @@
+
+from os import listdir
+from os.path import isfile, join
+import pandas as pd
+from tqdm import tqdm
+import bioc
+from nltk.tokenize.punkt import PunktSentenceTokenizer
+import nltk
+import logging
+import os
+import shutil
+
+def preprocess(basedir):
+    annotation_dir = join(basedir, 'annotations')
+    corpus_dir = join(basedir, 'corpus')
+    annotation_files = [f for f in listdir(annotation_dir) if isfile(join(annotation_dir,f))]
+    # corpus_files = [f for f in listdir(corpus_dir) if isfile(join(corpus_dir,f))]
+
+    preprocess_dir = join(basedir, 'preprocessed')
+    if os.path.exists(preprocess_dir):
+        shutil.rmtree(preprocess_dir)
+        os.makedirs(preprocess_dir)
+    else:
+        os.makedirs(preprocess_dir)
+
+    for idx in tqdm(range(len(annotation_files))):
+        fileName = annotation_files[idx]
+
+        df_doc, df_entity, df_relation = processOneFile(fileName, annotation_dir, corpus_dir)
+        fileName = fileName[0:fileName.find('.')]
+        df_doc.to_pickle(join(preprocess_dir, '{}.token'.format(fileName)))
+        df_entity.to_pickle(join(preprocess_dir, '{}.entity'.format(fileName)))
+        df_relation.to_pickle(join(preprocess_dir, '{}.relation'.format(fileName)))
+
+    logging.info("preprocessing complete in {}".format(basedir))
+
+def processOneFile(fileName, annotation_dir, corpus_dir):
+    annotation_file = get_bioc_file(join(annotation_dir, fileName))
+    corpus_file = get_text_file(join(corpus_dir, fileName.split('.bioc')[0]))
+    bioc_passage = annotation_file[0].passages[0]
+
+    # token
+    all_sents_inds = PunktSentenceTokenizer().span_tokenize(corpus_file)
+    df_doc = pd.DataFrame() # contains token-level information
+    for ind in range(len(all_sents_inds)):
+        t_start = all_sents_inds[ind][0]
+        t_end = all_sents_inds[ind][1]
+        tmp_tokens = token_from_sent(corpus_file[t_start:t_end], t_start)
+        df_tokens = pd.DataFrame(tmp_tokens, columns=['text', 'start', 'end'])
+
+        df_sent_id = pd.DataFrame([ind]*len(tmp_tokens), columns = ['sent_idx'])
+        df_comb = pd.concat([df_tokens, df_sent_id], axis=1)
+        df_doc = pd.concat([df_doc, df_comb])
+
+    df_doc.index = range(df_doc.shape[0])
+
+    # entity
+    entity_span_in_this_passage = [] # to determine entity overlap
+    anno_data = []
+    for entity in bioc_passage.annotations:
+        start = entity.locations[0].offset
+        end = entity.locations[0].end
+
+        tmp_df = pd.DataFrame(entity_span_in_this_passage, columns = ['start','end'])
+        result_df = tmp_df[((tmp_df['start']<=start)&(tmp_df['end']>start)) | ((tmp_df['start']<end)&(tmp_df['end']>=end))]
+        if result_df.shape[0]==0:
+            sent_idx = entity_in_sentence(start, end, all_sents_inds)
+            anno_data.append([entity.id, start, end, entity.text, entity.infons['type'], sent_idx])
+            entity_span_in_this_passage.append([start, end])
+        else: # some entities overlap with current entity
+            # raise RuntimeError('entity overlapped in {}'.format(fileName))
+            logging.debug('file {}, entity {}, overlapped'.format(fileName, entity.id))
+            continue
+
+    df_entity = pd.DataFrame(anno_data, columns = ['id','start','end','text','type', 'sent_idx']) # contains entity information
+    df_entity = df_entity.sort_values('start')
+    df_entity.index = range(df_entity.shape[0])
+
+    # relation
+    relation_data = []
+    for relation in bioc_passage.relations:
+        argument1 = relation.nodes[0].refid
+        argument2 = relation.nodes[1].refid
+
+        df_result = df_entity[ ((df_entity['id']==argument1) | (df_entity['id']==argument2)) ]
+        if df_result.shape[0]==2:
+            relation_data.append([relation.id, relation.infons['type'], argument1, argument2])
+        else:
+            logging.debug("file {}, relation {}, argument can't be found".format(fileName, relation.id))
+            continue
+
+    df_relation = pd.DataFrame(relation_data, columns = ['id','type','entity1_id','entity2_id'])
+
+    return df_doc, df_entity, df_relation
+
+
+def get_bioc_file(filename):
+    list_result = []
+    with bioc.iterparse(filename) as parser:
+        for document in parser:
+            list_result.append(document)
+    return list_result
+
+def get_text_file(filename):
+    return open(filename,'r').read()
+
+def text_tokenize(txt, sent_start):
+    tokens=nltk.word_tokenize(txt)
+    offset = 0
+    for token in tokens:
+        offset = txt.find(token, offset)
+        yield token, offset+sent_start, offset+len(token)+sent_start
+        offset += len(token)
+
+def token_from_sent(txt, sent_start):
+    return [token for token in text_tokenize(txt, sent_start)]
+
+def entity_in_sentence(entity_start, entity_end, all_sents_inds):
+    for i, (start, end) in enumerate(all_sents_inds):
+        if entity_start >= start and entity_end <= end:
+            return i
+    raise RuntimeError('cannot find entity in all sentences')
+
+def loadPreprocessData(basedir):
+    preprocess_dir = join(basedir, 'preprocessed')
+    files = list(set([f[0:f.find('.')] for f in listdir(preprocess_dir)]))
+    files.sort()
+
+    df_all_doc = []
+    df_all_entity = []
+    df_all_relation = []
+    for fileName in files:
+        df_all_doc.append(pd.read_pickle(join(preprocess_dir,fileName+'.token')))
+        df_all_entity.append(pd.read_pickle(join(preprocess_dir,fileName+'.entity')))
+        df_all_relation.append(pd.read_pickle(join(preprocess_dir,fileName+'.relation')))
+
+
+    logging.info("load preprocessed data complete in {}".format(basedir))
+
+    return df_all_doc, df_all_entity, df_all_relation
