@@ -12,6 +12,7 @@ from options import opt
 
 import trainandtest
 
+
 logger = logging.getLogger()
 if opt.verbose:
     logger.setLevel(logging.DEBUG)
@@ -39,10 +40,10 @@ elif opt.whattodo==2:
     train_token, train_entity, train_relation = preprocess.loadPreprocessData(opt.traindata)
     test_token, test_entity, test_relation = preprocess.loadPreprocessData(opt.testdata)
 
-    trainandtest.train(opt, train_token, train_entity, train_relation, test_token, test_entity, test_relation)
+    trainandtest.train(train_token, train_entity, train_relation, test_token, test_entity, test_relation)
 else :
     test_token, test_entity, test_relation = preprocess.loadPreprocessData(opt.testdata)
-    trainandtest.test(opt, test_token, test_entity, test_relation)
+    trainandtest.test(test_token, test_entity, test_relation)
 
 
 

@@ -2,6 +2,7 @@ from torch.utils.data import Dataset
 import torch
 from options import opt
 import numpy as np
+import logging
 
 # lowercased, number to 0, punctuation to #
 ENG_PUNC = set(['`','~','!','@','#','$','%','&','*','(',')','-','_','+','=','{',
@@ -25,10 +26,11 @@ def normalizeWord(word, cased=False):
 
 
 
-def getRelatonInstance(tokens, entities, relations, word_vocab, relation_vocab):
+def getRelatonInstance(note, tokens, entities, relations, word_vocab, relation_vocab, position_vocab1, position_vocab2):
 
     X = []
     Y = []
+
 
     for i, doc_relation in enumerate(relations):
 
@@ -45,11 +47,42 @@ def getRelatonInstance(tokens, entities, relations, word_vocab, relation_vocab):
             latter = entity2 if entity1['start']<entity2['start'] else entity1
             context_token = doc_token[(doc_token['sent_idx'] >= former['sent_idx']) & (doc_token['sent_idx'] <= latter['sent_idx'])]
             words = []
-            for word in context_token['text']:
-                word = normalizeWord(word)
+            positions1 = []
+            positions2 = []
+            i = 0
+            former_head = -1
+            latter_head = -1
+            for _, token in context_token.iterrows():
+                if token['start'] >= former['start'] and token['end'] <= former['end']:
+                    if former_head < i:
+                        former_head = i
+                if token['start'] >= latter['start'] and token['end'] <= latter['end']:
+                    if latter_head < i:
+                        latter_head = i
+
+                i += 1
+
+            if former_head == -1 or latter_head == -1:
+                raise RuntimeError('former_head or latter_head not found')
+
+            i = 0
+            for _, token in context_token.iterrows():
+
+                word = normalizeWord(token['text'])
                 words.append(word_vocab.lookup(word))
-            X.append({'tokens': words})
+
+                positions1.append(position_vocab1.lookup(former_head-i))
+                positions2.append(position_vocab2.lookup(latter_head-i))
+
+                i += 1
+
+
+
+
+
+            X.append({'tokens': words, 'positions1': positions1, 'positions2':positions2})
             Y.append(relation_vocab.lookup(relation['type']))
+
 
     return X, Y
 
@@ -77,6 +110,8 @@ class RelationDataset(Dataset):
     def set_max_seq_len(self, max_seq_len):
         for x in self.X:
             x['tokens'] = x['tokens'][:max_seq_len]
+            x['positions1'] = x['positions1'][:max_seq_len]
+            x['positions2'] = x['positions2'][:max_seq_len]
         self.max_seq_len = max_seq_len
 
 
@@ -90,28 +125,36 @@ def unsorted_collate(batch):
 def my_collate(batch, sort):
     x, y = zip(*batch)
     # extract input indices
-    x = [s['tokens'] for s in x]
-    x, y = pad(x, y, opt.eos_idx, sort)
-    if torch.cuda.is_available():
-        x = x.cuda()
-        y = y.cuda()
-    return (x, y)
+    tokens = [s['tokens'] for s in x]
+    positions1 = [s['positions1'] for s in x]
+    positions2 = [s['positions2'] for s in x]
 
-
-def pad(x, y, eos_idx, sort):
-    lengths = [len(row) for row in x]
+    lengths = [len(row) for row in tokens]
     max_len = max(lengths)
-
-    # pad sequences
-    padded_x = np.zeros((len(x), max_len), dtype=np.int)
-    padded_x.fill(eos_idx)
-    for i, row in enumerate(x):
-        assert eos_idx not in row, 'EOS in sequence {}'.format(row)
-        padded_x[i][:len(row)] = row
-    padded_x = torch.LongTensor(padded_x)
+    tokens = pad_sequence(tokens, max_len, opt.pad_idx)
+    positions1 = pad_sequence(positions1, max_len, opt.pad_idx)
+    positions2 = pad_sequence(positions2, max_len, opt.pad_idx)
     y = torch.LongTensor(y).view(-1)
 
-    return padded_x, y
+    if torch.cuda.is_available():
+        tokens = tokens.cuda()
+        positions1 = positions1.cuda()
+        positions2 = positions2.cuda()
+        y = y.cuda()
+    return (tokens, positions1, positions2, y)
+
+
+def pad_sequence(x, max_len, pad_idx):
+
+    padded_x = np.zeros((len(x), max_len), dtype=np.int)
+    padded_x.fill(pad_idx)
+    for i, row in enumerate(x):
+        assert pad_idx not in row, 'EOS in sequence {}'.format(row)
+        padded_x[i][:len(row)] = row
+    padded_x = torch.LongTensor(padded_x)
+
+    return padded_x
+
 
 
 
