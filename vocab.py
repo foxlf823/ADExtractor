@@ -64,6 +64,11 @@ class Vocab:
             return self.w2vvocab[alpha]
         return self.unk_idx
 
+    def lookup_id2str(self, id):
+        if id<0 or id>=self.vocab_size:
+            raise RuntimeError("{}: id out of range".format(self.__class__.__name__))
+        return self.v2wvocab[id]
+
 
 
 

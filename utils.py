@@ -3,6 +3,9 @@ import torch
 from options import opt
 import numpy as np
 import logging
+from tqdm import tqdm
+import os
+import shutil
 
 # lowercased, number to 0, punctuation to #
 ENG_PUNC = set(['`','~','!','@','#','$','%','&','*','(',')','-','_','+','=','{',
@@ -26,14 +29,14 @@ def normalizeWord(word, cased=False):
 
 
 
-def getRelatonInstance(note, tokens, entities, relations, word_vocab, relation_vocab, position_vocab1, position_vocab2):
+def getRelatonInstance(tokens, entities, relations, word_vocab, relation_vocab, position_vocab1, position_vocab2):
 
     X = []
     Y = []
 
+    for i in tqdm(range(len(relations))):
 
-    for i, doc_relation in enumerate(relations):
-
+        doc_relation = relations[i]
         doc_token = tokens[i]
         doc_entity = entities[i]
 
@@ -62,8 +65,13 @@ def getRelatonInstance(note, tokens, entities, relations, word_vocab, relation_v
 
                 i += 1
 
-            if former_head == -1 or latter_head == -1:
-                raise RuntimeError('former_head or latter_head not found')
+            if former_head == -1: # due to tokenization error, e.g., 10_197, hyper-CVAD-based vs hyper-CVAD
+                logging.debug('former_head not found, entity {} {} {}'.format(former['id'], former['start'], former['text']))
+                continue
+            if latter_head == -1:
+                logging.debug('latter_head not found, entity {} {} {}'.format(latter['id'], latter['start'], latter['text']))
+                continue
+
 
             i = 0
             for _, token in context_token.iterrows():
@@ -118,11 +126,8 @@ class RelationDataset(Dataset):
 
 
 
-def unsorted_collate(batch):
-    return my_collate(batch, sort=False)
 
-
-def my_collate(batch, sort):
+def my_collate(batch):
     x, y = zip(*batch)
     # extract input indices
     tokens = [s['tokens'] for s in x]
@@ -131,20 +136,19 @@ def my_collate(batch, sort):
 
     lengths = [len(row) for row in tokens]
     max_len = max(lengths)
+
     tokens = pad_sequence(tokens, max_len, opt.pad_idx)
     positions1 = pad_sequence(positions1, max_len, opt.pad_idx)
     positions2 = pad_sequence(positions2, max_len, opt.pad_idx)
     y = torch.LongTensor(y).view(-1)
-
     if torch.cuda.is_available():
-        tokens = tokens.cuda()
-        positions1 = positions1.cuda()
-        positions2 = positions2.cuda()
         y = y.cuda()
     return (tokens, positions1, positions2, y)
 
 
 def pad_sequence(x, max_len, pad_idx):
+    # pad to meet the need of PrimaryCapsule
+    max_len = max(max_len, 5)
 
     padded_x = np.zeros((len(x), max_len), dtype=np.int)
     padded_x.fill(pad_idx)
@@ -152,8 +156,10 @@ def pad_sequence(x, max_len, pad_idx):
         assert pad_idx not in row, 'EOS in sequence {}'.format(row)
         padded_x[i][:len(row)] = row
     padded_x = torch.LongTensor(padded_x)
-
+    if torch.cuda.is_available():
+        padded_x.cuda()
     return padded_x
+
 
 
 

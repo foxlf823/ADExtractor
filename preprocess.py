@@ -65,6 +65,9 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
         result_df = tmp_df[((tmp_df['start']<=start)&(tmp_df['end']>start)) | ((tmp_df['start']<end)&(tmp_df['end']>=end))]
         if result_df.shape[0]==0:
             sent_idx = entity_in_sentence(start, end, all_sents_inds)
+            if sent_idx == -1:
+                logging.debug('cannot find entity {} in all sentences of {}'.format(entity.id, fileName))
+                continue
             anno_data.append([entity.id, start, end, entity.text, entity.infons['type'], sent_idx])
             entity_span_in_this_passage.append([start, end])
         else: # some entities overlap with current entity
@@ -119,7 +122,9 @@ def entity_in_sentence(entity_start, entity_end, all_sents_inds):
     for i, (start, end) in enumerate(all_sents_inds):
         if entity_start >= start and entity_end <= end:
             return i
-    raise RuntimeError('cannot find entity in all sentences')
+    # due to annotation or sentence splitter error
+    return -1
+
 
 def loadPreprocessData(basedir):
     preprocess_dir = join(basedir, 'preprocessed')
@@ -129,12 +134,13 @@ def loadPreprocessData(basedir):
     df_all_doc = []
     df_all_entity = []
     df_all_relation = []
+    all_name = []
     for fileName in files:
         df_all_doc.append(pd.read_pickle(join(preprocess_dir,fileName+'.token')))
         df_all_entity.append(pd.read_pickle(join(preprocess_dir,fileName+'.entity')))
         df_all_relation.append(pd.read_pickle(join(preprocess_dir,fileName+'.relation')))
-
+        all_name.append(fileName)
 
     logging.info("load preprocessed data complete in {}".format(basedir))
 
-    return df_all_doc, df_all_entity, df_all_relation
+    return df_all_doc, df_all_entity, df_all_relation, all_name
