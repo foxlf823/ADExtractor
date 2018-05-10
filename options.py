@@ -20,6 +20,7 @@ parser.add_argument('-position_emb_size', default=10, type=int)
 parser.add_argument('-word_emb_size', default=50, type=int)
 parser.add_argument('-relation_emb_size', default=10, type=int)
 parser.add_argument('-pad_idx', default=1, type=int)
+parser.add_argument('-model', default=1, type=int, help='1-capsule, other-baseline')
 
 
 opt = parser.parse_args()

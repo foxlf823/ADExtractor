@@ -5,11 +5,12 @@ from torch.utils.data import DataLoader
 from options import opt
 from tqdm import tqdm
 import logging
-import model
+import baseline
 import torch.optim as optim
 import os
 import pickle
 import sortedcontainers
+import capsule
 
 def dataset_stat(tokens, entities, relations):
     word_alphabet = sortedcontainers.SortedSet()
@@ -91,7 +92,10 @@ def train(train_token, train_entity, train_relation, test_token, test_entity, te
     test_set = utils.RelationDataset(test_X, test_Y, opt.max_seq_len)
     test_loader = DataLoader(test_set, opt.batch_size, shuffle=False, collate_fn=my_collate)
 
-    m = model.CNN(word_vocab, position_vocab1, position_vocab2, relation_vocab)
+    if opt.model == 1:
+        m = capsule.CapsuleNet(word_vocab, position_vocab1, position_vocab2, relation_vocab)
+    else:
+        m = baseline.CNN(word_vocab, position_vocab1, position_vocab2, relation_vocab)
     if torch.cuda.is_available():
         m.cuda()
 
