@@ -6,6 +6,7 @@ from tqdm import tqdm
 import bioc
 from nltk.tokenize.punkt import PunktSentenceTokenizer
 import nltk
+nltk.download('punkt')
 import logging
 import os
 import shutil
@@ -40,7 +41,11 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
     bioc_passage = annotation_file[0].passages[0]
 
     # token
-    all_sents_inds = PunktSentenceTokenizer().span_tokenize(corpus_file)
+    all_sents_inds = []
+    generator = PunktSentenceTokenizer().span_tokenize(corpus_file)
+    for t in generator:
+        all_sents_inds.append(t)
+
     df_doc = pd.DataFrame() # contains token-level information
     for ind in range(len(all_sents_inds)):
         t_start = all_sents_inds[ind][0]

@@ -25,22 +25,31 @@ if opt.random_seed != 0:
     torch.manual_seed(opt.random_seed)
     torch.cuda.manual_seed_all(opt.random_seed)
 
+logging.info(opt)
 
 if opt.whattodo==1:
     preprocess.preprocess(opt.traindata)
     preprocess.preprocess(opt.testdata)
 elif opt.whattodo==2:
+    if os.path.exists(opt.pretrain):
+        shutil.rmtree(opt.pretrain)
+        os.makedirs(opt.pretrain)
+    else:
+        os.makedirs(opt.pretrain)
 
+    train_token, train_entity, train_relation, _ = preprocess.loadPreprocessData(opt.traindata)
+    test_token, test_entity, test_relation, _ = preprocess.loadPreprocessData(opt.testdata)
+
+    trainandtest.pretrain(train_token, train_entity, train_relation, test_token, test_entity, test_relation)
+elif opt.whattodo==3:
     if os.path.exists(opt.output):
         shutil.rmtree(opt.output)
         os.makedirs(opt.output)
     else:
         os.makedirs(opt.output)
 
-    train_token, train_entity, train_relation, _ = preprocess.loadPreprocessData(opt.traindata)
-    test_token, test_entity, test_relation, _ = preprocess.loadPreprocessData(opt.testdata)
 
-    trainandtest.train(train_token, train_entity, train_relation, test_token, test_entity, test_relation)
+    trainandtest.train()
 else:
 
     result_dumpdir = os.path.join(opt.testdata, "predicted")

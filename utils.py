@@ -1,3 +1,5 @@
+
+
 from torch.utils.data import Dataset
 import torch
 from options import opt
@@ -127,41 +129,99 @@ class RelationDataset(Dataset):
 
 
 
-def my_collate(batch):
+# def my_collate(batch):
+#     x, y = zip(*batch)
+#     # extract input indices
+#     tokens = [s['tokens'] for s in x]
+#     positions1 = [s['positions1'] for s in x]
+#     positions2 = [s['positions2'] for s in x]
+#
+#     lengths = [len(row) for row in tokens]
+#     max_len = max(lengths)
+#
+#     tokens = pad_sequence(tokens, max_len, opt.pad_idx)
+#     positions1 = pad_sequence(positions1, max_len, opt.pad_idx)
+#     positions2 = pad_sequence(positions2, max_len, opt.pad_idx)
+#     y = torch.LongTensor(y).view(-1)
+#     if torch.cuda.is_available():
+#         y = y.cuda()
+#     return (tokens, positions1, positions2, y)
+#
+#
+# def pad_sequence(x, max_len, pad_idx):
+#     # pad to meet the need of PrimaryCapsule
+#     max_len = max(max_len, 5)
+#
+#     padded_x = np.zeros((len(x), max_len), dtype=np.int)
+#     padded_x.fill(pad_idx)
+#     for i, row in enumerate(x):
+#         assert pad_idx not in row, 'EOS in sequence {}'.format(row)
+#         padded_x[i][:len(row)] = row
+#     padded_x = torch.LongTensor(padded_x)
+#     if torch.cuda.is_available():
+#         padded_x = padded_x.cuda()
+#     return padded_x
+
+def sorted_collate(batch):
+    return my_collate(batch, sort=True)
+
+
+def unsorted_collate(batch):
+    return my_collate(batch, sort=False)
+
+
+def my_collate(batch, sort):
     x, y = zip(*batch)
     # extract input indices
     tokens = [s['tokens'] for s in x]
     positions1 = [s['positions1'] for s in x]
     positions2 = [s['positions2'] for s in x]
 
+    (tokens, positions1, positions2, lengths), y = pad(tokens, positions1, positions2, y, opt.pad_idx, sort)
+    if torch.cuda.is_available():
+        tokens = tokens.cuda()
+        positions1 = positions1.cuda()
+        positions2 = positions2.cuda()
+        lengths = lengths.cuda()
+        y = y.cuda()
+    return tokens, positions1, positions2, lengths, y
+
+
+
+def pad(tokens, positions1, positions2, y, eos_idx, sort):
     lengths = [len(row) for row in tokens]
     max_len = max(lengths)
-
-    tokens = pad_sequence(tokens, max_len, opt.pad_idx)
-    positions1 = pad_sequence(positions1, max_len, opt.pad_idx)
-    positions2 = pad_sequence(positions2, max_len, opt.pad_idx)
+    # if using CNN, pad to at least the largest kernel size
+    if opt.model.lower() == 'cnn':
+        max_len = max(max_len, opt.max_kernel_size)
+    # pad sequences
+    tokens = pad_sequence(tokens, max_len, eos_idx)
+    positions1 = pad_sequence(positions1, max_len, eos_idx)
+    positions2 = pad_sequence(positions2, max_len, eos_idx)
+    lengths = torch.LongTensor(lengths)
     y = torch.LongTensor(y).view(-1)
-    if torch.cuda.is_available():
-        y = y.cuda()
-    return (tokens, positions1, positions2, y)
+    if sort:
+        # sort by length
+        sort_len, sort_idx = lengths.sort(0, descending=True)
+        tokens = tokens.index_select(0, sort_idx)
+        positions1 = positions1.index_select(0, sort_idx)
+        positions2 = positions2.index_select(0, sort_idx)
+        y = y.index_select(0, sort_idx)
+        return (tokens, positions1, positions2, sort_len), y
+    else:
+        return (tokens, positions1, positions2, lengths), y
 
 
-def pad_sequence(x, max_len, pad_idx):
-    # pad to meet the need of PrimaryCapsule
-    max_len = max(max_len, 5)
+def pad_sequence(x, max_len, eos_idx):
 
     padded_x = np.zeros((len(x), max_len), dtype=np.int)
-    padded_x.fill(pad_idx)
+    padded_x.fill(eos_idx)
     for i, row in enumerate(x):
-        assert pad_idx not in row, 'EOS in sequence {}'.format(row)
+        assert eos_idx not in row, 'EOS in sequence {}'.format(row)
         padded_x[i][:len(row)] = row
     padded_x = torch.LongTensor(padded_x)
-    if torch.cuda.is_available():
-        padded_x.cuda()
+
     return padded_x
-
-
-
 
 
 

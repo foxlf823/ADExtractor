@@ -60,7 +60,7 @@ class DenseCapsule(nn.Module):
         #         b = Variable(torch.zeros(x.size(0), self.out_num_caps, self.in_num_caps)).cuda()
         b = torch.zeros(x.size(0), self.out_num_caps, self.in_num_caps)
         if torch.cuda.is_available():
-            b.cuda()
+            b = b.cuda()
 
         assert self.routings > 0, 'The \'routings\' should be > 0.'
         for i in range(self.routings):
@@ -84,6 +84,82 @@ class DenseCapsule(nn.Module):
                 b = b + torch.sum(outputs * x_hat_detached, dim=-1)
 
         return torch.squeeze(outputs, dim=-2)
+
+
+
+class CapsuleNet(nn.Module):
+
+    def __init__(self, input_size, dim_enlarge_rate, init_dim_cap, relation_vocab):
+        super(CapsuleNet, self).__init__()
+
+        assert input_size%init_dim_cap==0, "input_size should be divided by init_dim_cap"
+        self.dim_enlarge_rate = dim_enlarge_rate
+        self.init_dim_cap = init_dim_cap
+        self.init_num_cap = input_size // init_dim_cap
+
+        in_dim_caps = self.init_dim_cap
+        cnt = 0
+        while input_size//(self.dim_enlarge_rate*in_dim_caps) > relation_vocab.vocab_size:
+            in_dim_caps *= self.dim_enlarge_rate
+            cnt += 1
+        assert cnt > 0, "should have at least one capsule layer"
+
+        in_dim_caps = self.init_dim_cap
+        self.caplayers = nn.ModuleList()
+        #self.caplayers = nn.Sequential()
+        for i in range(cnt):
+            if i == cnt-1:
+                self.caplayers.add_module('f-capsule-{}'.format(i),
+                                          DenseCapsule(in_num_caps=input_size // in_dim_caps,
+                                                       in_dim_caps=in_dim_caps,
+                                                       out_num_caps=relation_vocab.vocab_size,
+                                                       out_dim_caps=self.dim_enlarge_rate * in_dim_caps,
+                                                       routings=3))
+            else:
+                self.caplayers.add_module('f-capsule-{}'.format(i),
+                                          DenseCapsule(in_num_caps=input_size // in_dim_caps,
+                                                       in_dim_caps=in_dim_caps,
+                                                       out_num_caps=input_size // (self.dim_enlarge_rate * in_dim_caps),
+                                                       out_dim_caps=self.dim_enlarge_rate * in_dim_caps,
+                                                       routings=3))
+            in_dim_caps *= self.dim_enlarge_rate
+
+        # self.test = nn.Linear(128, 9)
+        # self.criterion = nn.CrossEntropyLoss()
+
+    def forward(self, x):  # (bz, input_size)
+        x = x.view(-1, self.init_num_cap, self.init_dim_cap)
+        #x = squash(x)
+
+
+        #x = self.caplayers(x)  # [bz, classes, cap_dim]
+        for cap in self.caplayers:
+            x = cap(x)
+
+        x = x.norm(dim=-1)
+
+        # x = self.test(x)
+
+        return x
+
+    def loss(self, by, y_pred):
+
+       return self._caps_loss(by, y_pred)
+        # return  self.criterion(y_pred, by)
+
+
+    def _caps_loss(self, by, y_pred):
+
+        y_true = torch.zeros(y_pred.size())
+        if torch.cuda.is_available():
+            y_true = y_true.cuda()
+        y_true.scatter_(1, by.view(-1, 1), 1.)
+
+        L = y_true * torch.clamp(0.9 - y_pred, min=0.) ** 2 + \
+            0.5 * (1 - y_true) * torch.clamp(y_pred - 0.1, min=0.) ** 2
+        L_margin = L.sum(dim=1).mean()
+
+        return L_margin
 
 
 class PrimaryCapsule(nn.Module):
@@ -110,10 +186,10 @@ class PrimaryCapsule(nn.Module):
         return squash(outputs)
 
 
-class CapsuleNet(nn.Module):
+class CapsuleNet1(nn.Module):
 
     def __init__(self, word_vocab, position1_vocab, position2_vocab, relation_vocab):
-        super(CapsuleNet, self).__init__()
+        super(CapsuleNet1, self).__init__()
 
         self.word_emb = nn.Embedding(word_vocab.vocab_size, word_vocab.emb_size, padding_idx=word_vocab.pad_idx)
         self.word_emb.weight.data = torch.from_numpy(word_vocab.embeddings).float()
@@ -176,12 +252,13 @@ class CapsuleNet(nn.Module):
 
     def _caps_loss(self, by, y_pred):
 
-        y_true = torch.zeros(y_pred.size()).scatter_(1, by.view(-1, 1), 1.)
+        y_true = torch.zeros(y_pred.size())
+        if torch.cuda.is_available():
+            y_true = y_true.cuda()
+        y_true.scatter_(1, by.view(-1, 1), 1.)
 
         L = y_true * torch.clamp(0.9 - y_pred, min=0.) ** 2 + \
             0.5 * (1 - y_true) * torch.clamp(y_pred - 0.1, min=0.) ** 2
         L_margin = L.sum(dim=1).mean()
 
         return L_margin
-
-

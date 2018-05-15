@@ -1,27 +1,53 @@
 import argparse
 
 parser = argparse.ArgumentParser()
-# parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0_debug")
-# parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data_debug")
-parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0")
-parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data")
-parser.add_argument('-whattodo', type=int, default=3, help='1-preprocess, 2-train, other-test')
+parser.add_argument('-whattodo', type=int, default=4, help='1-preprocess, 2-pretrain, 3-train, other-test')
 parser.add_argument('-verbose', action='store_true', help='1-print debug logs')
-parser.add_argument('-random_seed', type=int, default=1)
-#parser.add_argument('-emb', type=str, default="/Users/feili/project/emb_100_for_debug.txt")
-parser.add_argument('-emb', type=str, default="/Users/feili/project/man/data/w2v/word2vec.txt")
+
+# directory
+parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0_debug")
+parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data_debug")
+# parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0")
+# parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data")
 parser.add_argument('-output', type=str, default="./output")
+parser.add_argument('-emb', type=str, default="/Users/feili/project/emb_100_for_debug.txt")
+#parser.add_argument('-emb', type=str, default="/Users/feili/project/man/data/w2v/word2vec.txt")
+# parser.add_argument('-emb', type=str, default="/Users/feili/project/abd_naacl_emb/pubmed+wiki+pitts-nopunct-lower-cbow-n10.bin")
+parser.add_argument('-pretrain', type=str, default="./pretrain")
+
+# preprocessing
 parser.add_argument('-max_seq_len', type=int, default=0) # set to <=0 to not truncate
+parser.add_argument('-full_data', action='store_true', default=False)
+parser.add_argument('-pad_idx', default=1, type=int)
+
+# training
+parser.add_argument('-random_seed', type=int, default=1)
 parser.add_argument('-batch_size', type=int, default=8)
 parser.add_argument('-max_epoch', type=int, default=100)
-parser.add_argument('-learning_rate', type=float, default=0.001)
+parser.add_argument('-learning_rate', type=float, default=0.0001)
 parser.add_argument('-grad_clip', type=float, default=5.0)
-parser.add_argument('-full_data', action='store_true', default=False)
+parser.add_argument('-dropout', type=float, default=0.4)
+
+# hyper-parameter
 parser.add_argument('-position_emb_size', default=10, type=int)
 parser.add_argument('-word_emb_size', default=50, type=int)
 parser.add_argument('-relation_emb_size', default=10, type=int)
-parser.add_argument('-pad_idx', default=1, type=int)
-parser.add_argument('-model', default=1, type=int, help='1-capsule, other-baseline')
+
+# feature extractor
+parser.add_argument('-model', default='cnn', help='cnn, lstm, other')
+parser.add_argument('-shared_hidden_size', type=int, default=128)
+parser.add_argument('-F_layers', type=int, default=1)
+parser.add_argument('-kernel_num', type=int, default=200)
+parser.add_argument('-kernel_sizes', type=int, nargs='+', default=[3,4,5])
+
+# high-level model
+parser.add_argument('-model_high', default='capsule', help='capsule, other')
+parser.add_argument('-dim_enlarge_rate', type=int, default=2)
+parser.add_argument('-init_dim_cap', type=int, default=4)
+
+
 
 
 opt = parser.parse_args()
+
+opt.max_kernel_size = max(opt.kernel_sizes)
