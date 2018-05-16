@@ -3,12 +3,13 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('-whattodo', type=int, default=4, help='1-preprocess, 2-pretrain, 3-train, other-test')
 parser.add_argument('-verbose', action='store_true', help='1-print debug logs')
+parser.add_argument('-gpu', type=int, default=0)
 
 # directory
-# parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0_debug")
-# parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data_debug")
-parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0")
-parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data")
+parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0_debug")
+parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data_debug")
+# parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0")
+# parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data")
 parser.add_argument('-output', type=str, default="./output")
 parser.add_argument('-emb', type=str, default="/Users/feili/project/emb_100_for_debug.txt")
 #parser.add_argument('-emb', type=str, default="/Users/feili/project/man/data/w2v/word2vec.txt")
@@ -36,13 +37,13 @@ parser.add_argument('-relation_emb_size', default=10, type=int)
 
 # feature extractor
 parser.add_argument('-model', default='cnn', help='cnn, lstm, other')
-parser.add_argument('-shared_hidden_size', type=int, default=128)
+parser.add_argument('-shared_hidden_size', type=int, default=256)
 parser.add_argument('-F_layers', type=int, default=1)
 parser.add_argument('-kernel_num', type=int, default=200)
 parser.add_argument('-kernel_sizes', type=int, nargs='+', default=[3,4,5])
 
 # high-level model
-parser.add_argument('-model_high', default='capsule', help='capsule, other')
+parser.add_argument('-model_high', default='capsule', help='capsule, mlp, capsule_em')
 parser.add_argument('-dim_enlarge_rate', type=int, default=2)
 parser.add_argument('-init_dim_cap', type=int, default=4)
 

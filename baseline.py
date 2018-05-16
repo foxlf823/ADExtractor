@@ -3,6 +3,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class MLP(nn.Module):
+    def __init__(self, input_size, relation_vocab):
+        super(MLP, self).__init__()
+
+        self.linear = nn.Linear(input_size, relation_vocab.vocab_size, bias=False)
+
+        self.criterion = nn.CrossEntropyLoss()
+
+    def forward(self, x):
+
+        x = self.linear(x)
+
+        return x
+
+    def loss(self, by, y_pred):
+
+        return self.criterion(y_pred, by)
+
+
 class CNN(nn.Module):
     def __init__(self, word_vocab, position1_vocab, position2_vocab, relation_vocab):
         super(CNN, self).__init__()

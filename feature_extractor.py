@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as functional
 from torch import autograd, nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-
+from options import opt
 
 
 class CNNFeatureExtractor(nn.Module):
@@ -137,7 +137,7 @@ class DotAttentionLayer(nn.Module):
         # computing mask
         idxes = torch.arange(0, max_len, out=torch.LongTensor(max_len)).unsqueeze(0)
         if torch.cuda.is_available():
-            idxes = idxes.cuda()
+            idxes = idxes.cuda(opt.gpu)
         mask = (idxes<lengths.unsqueeze(1)).float()
 
         alphas = alphas * mask

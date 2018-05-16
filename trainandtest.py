@@ -15,6 +15,7 @@ import bioc
 from feature_extractor import *
 import itertools
 import math
+import capsule_em
 
 def dataset_stat(tokens, entities, relations):
     word_alphabet = sortedcontainers.SortedSet()
@@ -83,14 +84,19 @@ def test(test_token, test_entity, test_relation, test_name, result_dumpdir):
     else:
         raise RuntimeError('Unknown feature extractor {}'.format(opt.model))
     if torch.cuda.is_available():
-        feature_extractor = feature_extractor.cuda()
+        feature_extractor = feature_extractor.cuda(opt.gpu)
 
     if opt.model_high == 'capsule':
-        m = capsule.CapsuleNet(opt.shared_hidden_size, opt.dim_enlarge_rate, opt.init_dim_cap, relation_vocab)
+        # m = capsule.CapsuleNet(opt.shared_hidden_size, opt.dim_enlarge_rate, opt.init_dim_cap, relation_vocab)
+        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab)
+    elif opt.model_high == 'capsule_em':
+        m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
+    elif opt.model_high == 'mlp':
+        m = baseline.MLP(opt.shared_hidden_size, relation_vocab)
     else:
         raise RuntimeError('Unknown model {}'.format(opt.model_high))
     if torch.cuda.is_available():
-        m = m.cuda()
+        m = m.cuda(opt.gpu)
 
     feature_extractor.load_state_dict(torch.load(os.path.join(opt.output, 'feature_extractor.pth')))
     m.load_state_dict(torch.load(os.path.join(opt.output, 'model.pth')))
@@ -230,14 +236,19 @@ def test1(test_token, test_entity, test_relation, test_name, result_dumpdir):
     else:
         raise RuntimeError('Unknown feature extractor {}'.format(opt.model))
     if torch.cuda.is_available():
-        feature_extractor = feature_extractor.cuda()
+        feature_extractor = feature_extractor.cuda(opt.gpu)
 
     if opt.model_high == 'capsule':
-        m = capsule.CapsuleNet(opt.shared_hidden_size, opt.dim_enlarge_rate, opt.init_dim_cap, relation_vocab)
+        # m = capsule.CapsuleNet(opt.shared_hidden_size, opt.dim_enlarge_rate, opt.init_dim_cap, relation_vocab)
+        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab)
+    elif opt.model_high == 'capsule_em':
+        m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
+    elif opt.model_high == 'mlp':
+        m = baseline.MLP(opt.shared_hidden_size, relation_vocab)
     else:
         raise RuntimeError('Unknown model {}'.format(opt.model_high))
     if torch.cuda.is_available():
-        m = m.cuda()
+        m = m.cuda(opt.gpu)
 
     feature_extractor.load_state_dict(torch.load(os.path.join(opt.output, 'feature_extractor.pth')))
     m.load_state_dict(torch.load(os.path.join(opt.output, 'model.pth')))
@@ -432,14 +443,19 @@ def train():
     else:
         raise RuntimeError('Unknown feature extractor {}'.format(opt.model))
     if torch.cuda.is_available():
-        feature_extractor = feature_extractor.cuda()
+        feature_extractor = feature_extractor.cuda(opt.gpu)
 
     if opt.model_high == 'capsule':
-        m = capsule.CapsuleNet(opt.shared_hidden_size, opt.dim_enlarge_rate, opt.init_dim_cap, relation_vocab)
+        # m = capsule.CapsuleNet(opt.shared_hidden_size, opt.dim_enlarge_rate, opt.init_dim_cap, relation_vocab)
+        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab)
+    elif opt.model_high == 'capsule_em':
+        m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
+    elif opt.model_high == 'mlp':
+        m = baseline.MLP(opt.shared_hidden_size, relation_vocab)
     else:
         raise RuntimeError('Unknown model {}'.format(opt.model_high))
     if torch.cuda.is_available():
-        m = m.cuda()
+        m = m.cuda(opt.gpu)
 
     # m = capsule.CapsuleNet1(word_vocab, position_vocab1, position_vocab2, relation_vocab)
 
@@ -475,6 +491,9 @@ def train():
 
             total += tokens.size(0)
             _, pred = torch.max(outputs, 1)
+            # if i==727:
+            #     logging.info(pred)
+            #     logging.info(targets)
             correct += (pred == targets).sum().item()
 
 

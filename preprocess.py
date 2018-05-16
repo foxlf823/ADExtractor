@@ -6,7 +6,7 @@ from tqdm import tqdm
 import bioc
 from nltk.tokenize.punkt import PunktSentenceTokenizer
 import nltk
-nltk.download('punkt')
+# nltk.download('punkt')
 import logging
 import os
 import shutil

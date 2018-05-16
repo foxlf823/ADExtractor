@@ -351,11 +351,11 @@ def my_collate(batch, sort):
 
     (tokens, positions1, positions2, lengths), y = pad(tokens, positions1, positions2, y, opt.pad_idx, sort)
     if torch.cuda.is_available():
-        tokens = tokens.cuda()
-        positions1 = positions1.cuda()
-        positions2 = positions2.cuda()
-        lengths = lengths.cuda()
-        y = y.cuda()
+        tokens = tokens.cuda(opt.gpu)
+        positions1 = positions1.cuda(opt.gpu)
+        positions2 = positions2.cuda(opt.gpu)
+        lengths = lengths.cuda(opt.gpu)
+        y = y.cuda(opt.gpu)
     return tokens, positions1, positions2, lengths, y
 
 
