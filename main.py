@@ -61,8 +61,8 @@ else:
 
     test_token, test_entity, test_relation, test_name = preprocess.loadPreprocessData(opt.testdata)
 
-    trainandtest.test(test_token, test_entity, test_relation, test_name, result_dumpdir)
-
+    # trainandtest.test(test_token, test_entity, test_relation, test_name, result_dumpdir)
+    trainandtest.test1(test_token, test_entity, test_relation, test_name, result_dumpdir)
 
 
 

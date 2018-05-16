@@ -47,7 +47,7 @@ class Vocab:
         if pretrained_file:
             ct_word_in_pretrained = 0
 
-            if pretrained_file.find('.bin'):
+            if pretrained_file.find('.bin') != -1:
                 with open(pretrained_file, 'rb') as f:
                     wordTotal = int(_readString(f))
                     self.emb_size = int(_readString(f))

@@ -5,10 +5,10 @@ parser.add_argument('-whattodo', type=int, default=4, help='1-preprocess, 2-pret
 parser.add_argument('-verbose', action='store_true', help='1-print debug logs')
 
 # directory
-parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0_debug")
-parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data_debug")
-# parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0")
-# parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data")
+# parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0_debug")
+# parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data_debug")
+parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0")
+parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data")
 parser.add_argument('-output', type=str, default="./output")
 parser.add_argument('-emb', type=str, default="/Users/feili/project/emb_100_for_debug.txt")
 #parser.add_argument('-emb', type=str, default="/Users/feili/project/man/data/w2v/word2vec.txt")
@@ -19,6 +19,7 @@ parser.add_argument('-pretrain', type=str, default="./pretrain")
 parser.add_argument('-max_seq_len', type=int, default=0) # set to <=0 to not truncate
 parser.add_argument('-full_data', action='store_true', default=False)
 parser.add_argument('-pad_idx', default=1, type=int)
+parser.add_argument('-sent_window', default=3, type=int)
 
 # training
 parser.add_argument('-random_seed', type=int, default=1)
