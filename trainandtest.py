@@ -16,6 +16,7 @@ from feature_extractor import *
 import itertools
 import math
 import capsule_em
+import numpy as np
 
 def dataset_stat(tokens, entities, relations):
     word_alphabet = sortedcontainers.SortedSet()
@@ -344,7 +345,11 @@ def test1(test_token, test_entity, test_relation, test_name, result_dumpdir):
                         _, pred = torch.max(outputs, 1)
 
                     relation_type = relation_vocab.lookup_id2str(pred.item())
-                    if relation_type != '<unk>':
+                    if relation_type == '<unk>':
+                        continue
+                    elif utils.relationConstraint1(relation_type, former, latter) == False:
+                        continue
+                    else:
                         bioc_relation = bioc.BioCRelation()
                         passage.add_relation(bioc_relation)
                         bioc_relation.id = str(relation_id)
@@ -406,6 +411,42 @@ def pretrain(train_token, train_entity, train_relation, test_token, test_entity,
     pickle.dump(test_Y, open(os.path.join(opt.pretrain, 'test_Y.pkl'), "wb"), True)
 
 
+def makeDataset(train_X, train_Y, relation_vocab, my_collate):
+    train_X_classified = {}
+    train_Y_classified = {}
+    for i in range(len(train_X)):
+        x = train_X[i]
+        y = train_Y[i]
+        class_name = relation_vocab.lookup_id2str(y)
+        if class_name in train_X_classified.keys():
+            train_X_classified[class_name].append(x)
+            train_Y_classified[class_name].append(y)
+        else:
+            train_X_classified[class_name] = [x]
+            train_Y_classified[class_name] = [y]
+
+
+    train_sets = [] # each class corresponds to a set, loader, sample
+    train_loaders = []
+    train_samples = []
+    train_numbers = []
+    train_iters = []
+    for class_name in train_Y_classified:
+        x = train_X_classified[class_name]
+        y = train_Y_classified[class_name]
+        train_numbers.append((class_name, len(y)))
+
+        train_set = utils.RelationDataset(x, y, opt.max_seq_len)
+        train_sets.append(train_set)
+        train_sampler = torch.utils.data.sampler.RandomSampler(train_set)
+        train_samples.append(train_sampler)
+        train_loader = DataLoader(train_set, 1, shuffle=False, sampler=train_sampler, collate_fn=my_collate)
+        train_loaders.append(train_loader)
+        train_iter = iter(train_loader)
+        train_iters.append(train_iter)
+
+    return train_loaders, train_iters, train_numbers
+
 def train():
 
     logging.info("loading ... vocab")
@@ -417,21 +458,31 @@ def train():
     # One relation instance is composed of X (a pair of entities and their context), Y (relation label).
     train_X = pickle.load(open(os.path.join(opt.pretrain, 'train_X.pkl'), 'rb'))
     train_Y = pickle.load(open(os.path.join(opt.pretrain, 'train_Y.pkl'), 'rb'))
-    logging.info("training instance build completed, total {}".format(len(train_Y)))
+    logging.info("total training instance {}".format(len(train_Y)))
 
     my_collate = utils.sorted_collate if opt.model == 'lstm' else utils.unsorted_collate
 
-    train_set = utils.RelationDataset(train_X, train_Y, opt.max_seq_len)
-    # my_shuffle = False if opt.random_seed != 0 else True
-    # train_loader = DataLoader(train_set, opt.batch_size, shuffle=my_shuffle, collate_fn=my_collate)
-    train_loader = DataLoader(train_set, opt.batch_size, shuffle=True, collate_fn=my_collate)
+    train_loaders, train_iters, train_numbers = makeDataset(train_X, train_Y, relation_vocab, my_collate)
+    for t in train_numbers:
+        logging.info(t)
 
     test_X = pickle.load(open(os.path.join(opt.pretrain, 'test_X.pkl'), 'rb'))
     test_Y = pickle.load(open(os.path.join(opt.pretrain, 'test_Y.pkl'), 'rb'))
-    logging.info("test instance build completed, total {}".format(len(test_Y)))
+    logging.info("total test instance {}".format(len(test_Y)))
 
-    test_set = utils.RelationDataset(test_X, test_Y, opt.max_seq_len)
+    test_X_remove_unk = []
+    test_Y_remove_unk = []
+    for i in range(len(test_X)):
+        x = test_X[i]
+        y = test_Y[i]
+
+        if y != relation_vocab.unk_idx:
+            test_X_remove_unk.append(x)
+            test_Y_remove_unk.append(y)
+
+    test_set = utils.RelationDataset(test_X_remove_unk, test_Y_remove_unk, opt.max_seq_len)
     test_loader = DataLoader(test_set, opt.batch_size, shuffle=False, collate_fn=my_collate)
+    logging.info("actual test instance {}".format(len(test_Y_remove_unk)))
 
     if opt.model.lower() == 'lstm':
         feature_extractor = LSTMFeatureExtractor(word_vocab, position_vocab1, position_vocab2,
@@ -460,40 +511,33 @@ def train():
     # m = capsule.CapsuleNet1(word_vocab, position_vocab1, position_vocab2, relation_vocab)
 
     iter_parameter = itertools.chain(*map(list, [feature_extractor.parameters(), m.parameters()]))
-    # iter_parameter = itertools.chain(*map(list, [m.parameters()]))
     optimizer = optim.Adam(iter_parameter, lr=opt.learning_rate)
-#    optimizer1 = optim.Adam(feature_extractor.parameters(), lr=opt.learning_rate)
-    #   optimizer = optim.Adam(m.parameters(), lr=opt.learning_rate)
 
-    num_iter = len(train_loader)
+    # use the median number of instance number of all classes except unknown
+    num_iter = int(np.median(np.array([num for class_name, num in train_numbers if class_name != relation_vocab.unk_tok])))
+
     best_acc = 0.0
     logging.info("start training ...")
     for epoch in range(opt.max_epoch):
 
         m.train()
         correct, total = 0, 0
-        train_iter = iter(train_loader)
+
         for i in tqdm(range(num_iter)):
 
-            tokens, positions1, positions2, lengths, targets = next(train_iter)
+            tokens, positions1, positions2, lengths, targets = utils.endless_get_next_batch(train_loaders, train_iters)
 
             hidden_features = feature_extractor.forward(tokens, positions1, positions2, lengths)
             outputs = m.forward(hidden_features)
-            # outputs = m.forward(tokens, positions1, positions2)
             loss = m.loss(targets, outputs)
 
             optimizer.zero_grad()
-#            optimizer1.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(iter_parameter, opt.grad_clip)
             optimizer.step()
- #           optimizer1.step()
 
             total += tokens.size(0)
             _, pred = torch.max(outputs, 1)
-            # if i==727:
-            #     logging.info(pred)
-            #     logging.info(targets)
             correct += (pred == targets).sum().item()
 
 
@@ -532,22 +576,6 @@ def evaluate(feature_extractor, m, loader):
         acc = 100.0 * correct / total
         return acc
 
-# def evaluate(m, loader):
-#     with torch.no_grad():
-#         m.eval()
-#         it = iter(loader)
-#         correct = 0
-#         total = 0
-#         for tokens, positions1, positions2, lengths, targets in tqdm(it):
-#
-#             outputs = m.forward(tokens, positions1, positions2, )
-#
-#             _, pred = torch.max(outputs, 1)
-#             total += targets.size(0)
-#             correct += (pred == targets).sum().data.item()
-#
-#         acc = 100.0 * correct / total
-#         return acc
 
 
 

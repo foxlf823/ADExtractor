@@ -69,31 +69,67 @@ def relationConstraint(entity1, entity2): # determine whether the constraint are
     else:
         return False
 
-# def relationConstraint(relation_type, entity1, entity2):
-#     if relation_type=='do':
-#         if entity1['type']== 'Drug' and entity2['type']=='Dose':
-#             return 1
-#         elif entity1['type']== 'Dose' and entity2['type']=='Dose':
-#             return 2
-#
-#     elif relation_type=='fr':
-#         pass
-#     elif relation_type=='manner/route':
-#         pass
-#     elif relation_type=='Drug_By Patient':
-#         pass
-#     elif relation_type=='severity_type':
-#         pass
-#     elif relation_type=='adverse':
-#         pass
-#     elif relation_type=='reason':
-#         pass
-#     elif relation_type=='Drug_By Physician':
-#         pass
-#     elif relation_type=='du':
-#         pass
-#     else:
-#         raise RuntimeError("unknown relation type")
+def relationConstraint1(relation_type, entity1, entity2):
+    type1, type2 = entity1['type'], entity2['type']
+
+    if relation_type=='do':
+        if (type1 == 'Drug' and type2 == 'Dose') or (type1 == 'Dose' and type2 == 'Drug') or (
+                type1 == 'Dose' and type2 == 'Dose'):
+            return True
+        else:
+            return False
+
+    elif relation_type=='fr':
+        if (type1 == 'Drug' and type2 == 'Frequency') or (type1 == 'Frequency' and type2 == 'Drug') or (
+                type1 == 'Frequency' and type2 == 'Frequency'):
+            return True
+        else:
+            return False
+    elif relation_type=='manner/route':
+        if (type1 == 'Drug' and type2 == 'Route') or (type1 == 'Route' and type2 == 'Drug') or (
+                type1 == 'Route' and type2 == 'Route'):
+            return True
+        else:
+            return False
+    elif relation_type=='Drug_By Patient':
+        if (type1 == 'Drug By' and type2 == 'Patient') or (type1 == 'Patient' and type2 == 'Drug By'):
+            return True
+        else:
+            return False
+    elif relation_type=='severity_type':
+        if (type1 == 'Indication' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'Indication') or \
+                (type1 == 'ADE' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'ADE') or \
+                (type1 == 'SSLIF' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'SSLIF') \
+                or (type1 == 'Severity' and type2 == 'Severity'):
+            return True
+        else:
+            return False
+    elif relation_type=='adverse':
+        if (type1 == 'Drug' and type2 == 'ADE') or (type1 == 'ADE' and type2 == 'Drug') or \
+                (type1 == 'SSLIF' and type2 == 'ADE') or (type1 == 'ADE' and type2 == 'SSLIF') \
+                or (type1 == 'ADE' and type2 == 'ADE'):
+            return True
+        else:
+            return False
+    elif relation_type=='reason':
+        if (type1 == 'Drug' and type2 == 'Indication') or (type1 == 'Indication' and type2 == 'Drug') or (
+                type1 == 'Indication' and type2 == 'Indication'):
+            return True
+        else:
+            return False
+    elif relation_type=='Drug_By Physician':
+        if (type1 == 'Drug By' and type2 == 'Physician') or (type1 == 'Physician' and type2 == 'Drug By'):
+            return True
+        else:
+            return False
+    elif relation_type=='du':
+        if (type1 == 'Drug' and type2 == 'Duration') or (type1 == 'Duration' and type2 == 'Drug') or (
+                type1 == 'Duration' and type2 == 'Duration'):
+            return True
+        else:
+            return False
+    else:
+        raise RuntimeError("entity and relation types are not consistent")
 
 
 # enumerate all entity pairs
@@ -395,6 +431,55 @@ def pad_sequence(x, max_len, eos_idx):
 
     return padded_x
 
+def pad_sequence_torch(tensor_list, max_len, eos_idx):
+
+    padded_x = torch.full((len(tensor_list), max_len), eos_idx, dtype=torch.long)
+    if torch.cuda.is_available():
+        padded_x = padded_x.cuda(opt.gpu)
+
+    for i, tensor in enumerate(tensor_list):
+        padded_x[i, 0:tensor.size(1)] = tensor[0]
+
+    return padded_x
+
+def endless_get_next_batch(loaders, iters):
+    tokens, positions1, positions2, lengths, targets = [], [], [], [], []
+    max_len = -1
+    for i, loader in enumerate(loaders):
+        it = iters[i]
+        try:
+            token, position1, position2, length, target = next(it)
+            tokens.append(token)
+            positions1.append(position1)
+            positions2.append(position2)
+            lengths.append(length)
+            targets.append(target)
+            if length.item() > max_len:
+                max_len = length.item()
+        except StopIteration:
+            it = iter(loader)
+            token, position1, position2, length, target = next(it)
+            tokens.append(token)
+            positions1.append(position1)
+            positions2.append(position2)
+            lengths.append(length)
+            targets.append(target)
+            if length.item() > max_len:
+                max_len = length.item()
+
+    # if rnn, these should be sorted, leave its implement in the future
+
+    # if using CNN, pad to at least the largest kernel size
+    if opt.model.lower() == 'cnn':
+        max_len = max(max_len, opt.max_kernel_size)
+
+    tokens = pad_sequence_torch(tokens, max_len, opt.pad_idx)
+    positions1 = pad_sequence_torch(positions1, max_len, opt.pad_idx)
+    positions2 = pad_sequence_torch(positions2, max_len, opt.pad_idx)
+    lengths = torch.cat(lengths, 0)
+    targets = torch.cat(targets, 0)
+
+    return tokens, positions1, positions2, lengths, targets
 
 
 
