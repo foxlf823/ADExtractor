@@ -40,8 +40,7 @@ def normalizeWord(word, cased=False):
 # 'Drug_By Physician': set(['Drug By Physician']),
 # 'du': set(['Duration Duration', 'Drug Duration'])
 
-def relationConstraint(entity1, entity2): # determine whether the constraint are satisfied, non-directional
-    type1, type2 = entity1['type'], entity2['type']
+def relationConstraint(type1, type2): # determine whether the constraint are satisfied, non-directional
 
     if (type1 == 'Drug' and type2 == 'Dose') or (type1 == 'Dose' and type2 == 'Drug') or (type1 == 'Dose' and type2 == 'Dose'):
         return True
@@ -69,8 +68,7 @@ def relationConstraint(entity1, entity2): # determine whether the constraint are
     else:
         return False
 
-def relationConstraint1(relation_type, entity1, entity2):
-    type1, type2 = entity1['type'], entity2['type']
+def relationConstraint1(relation_type, type1, type2):
 
     if relation_type=='do':
         if (type1 == 'Drug' and type2 == 'Dose') or (type1 == 'Dose' and type2 == 'Drug') or (
@@ -133,9 +131,10 @@ def relationConstraint1(relation_type, entity1, entity2):
 
 
 # enumerate all entity pairs
-def getRelationInstance1(tokens, entities, relations, word_vocab, relation_vocab, position_vocab1, position_vocab2):
+def getRelationInstance1(tokens, entities, relations, names, word_vocab, relation_vocab, position_vocab1, position_vocab2):
     X = []
     Y = []
+    other = [] # other is used for outputing results, it's usually used for test set
     cnt_neg = 0
 
     for i in tqdm(range(len(relations))):
@@ -143,30 +142,25 @@ def getRelationInstance1(tokens, entities, relations, word_vocab, relation_vocab
         doc_relation = relations[i]
         doc_token = tokens[i]
         doc_entity = entities[i] # entity are sorted by start offset
+        doc_name = names[i]
 
         row_num = doc_entity.shape[0]
 
-        # cnt1 = 0
-        # cnt2 = 0
-        # cnt3 = 0
         for latter_idx in range(row_num):
 
             for former_idx in range(row_num):
 
                 if former_idx < latter_idx:
-                    # cnt1 += 1
+
                     former = doc_entity.loc[former_idx]
                     latter = doc_entity.loc[latter_idx]
 
                     if math.fabs(latter['sent_idx']-former['sent_idx']) >= opt.sent_window:
                         continue
 
-                    # cnt2 += 1
-
-                    if relationConstraint(former, latter) == False:
+                    if relationConstraint(former['type'], latter['type']) == False:
                         continue
 
-                    # cnt3 += 1
                     gold_relations = doc_relation[
                         (
                                 ((doc_relation['entity1_id'] == former['id']) & (
@@ -226,19 +220,19 @@ def getRelationInstance1(tokens, entities, relations, word_vocab, relation_vocab
                     else:
                         Y.append(relation_vocab.lookup(gold_relations.iloc[0]['type']))
 
+                    other_info = {}
+                    other_info['doc_name'] = doc_name
+                    other_info['former_id'] = former['id']
+                    other_info['latter_id'] = latter['id']
+                    other.append(other_info)
 
 
-
-
-
-
-        #print(cnt1, cnt2, cnt3)
 
 
     neg = 100.0*cnt_neg/len(Y)
 
     logging.info("positive instance {}%, negative instance {}%".format(100-neg, neg))
-    return X, Y
+    return X, Y, other
 
 
 
@@ -479,7 +473,19 @@ def endless_get_next_batch(loaders, iters):
     lengths = torch.cat(lengths, 0)
     targets = torch.cat(targets, 0)
 
+    if len(target) < 2:
+        return endless_get_next_batch(loaders, iters)
+
     return tokens, positions1, positions2, lengths, targets
 
 
+def endless_get_next_batch_without_rebatch(loaders, iters):
+    try:
+        token, position1, position2, length, target = next(iters)
+    except StopIteration:
+        iters = iter(loaders)
+        token, position1, position2, length, target = next(iters)
 
+    if len(target) < 2:
+        return endless_get_next_batch_without_rebatch(loaders, iters)
+    return token, position1, position2, length, target

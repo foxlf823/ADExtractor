@@ -39,6 +39,9 @@ class DenseCapsule(nn.Module):
         self.routings = routings
         self.weight = nn.Parameter(0.01 * torch.randn(out_num_caps, in_num_caps, out_dim_caps, in_dim_caps))
 
+        if opt.model_high_bn:
+            self.batchnorm = nn.BatchNorm2d(out_num_caps)
+
     #         stdv = 1. / math.sqrt(in_dim_caps*in_num_caps)
     #         self.weight = nn.Parameter(torch.zeros(out_num_caps, in_num_caps, out_dim_caps, in_dim_caps))
     #         self.weight.data.uniform_(-stdv, stdv)
@@ -72,10 +75,16 @@ class DenseCapsule(nn.Module):
                 # c.size expanded to [batch, out_num_caps, in_num_caps, 1           ]
                 # x_hat.size     =   [batch, out_num_caps, in_num_caps, out_dim_caps]
                 # => outputs.size=   [batch, out_num_caps, 1,           out_dim_caps]
-                outputs = squash(torch.sum(c[:, :, :, None] * x_hat, dim=-2, keepdim=True))
+                if opt.model_high_bn:
+                    outputs = squash(self.batchnorm(torch.sum(c[:, :, :, None] * x_hat, dim=-2, keepdim=True)))
+                else:
+                    outputs = squash(torch.sum(c[:, :, :, None] * x_hat, dim=-2, keepdim=True))
                 # outputs = squash(torch.matmul(c[:, :, None, :], x_hat))  # alternative way
             else:  # Otherwise, use `x_hat_detached` to update `b`. No gradients flow on this path.
-                outputs = squash(torch.sum(c[:, :, :, None] * x_hat_detached, dim=-2, keepdim=True))
+                if opt.model_high_bn:
+                    outputs = squash(self.batchnorm(torch.sum(c[:, :, :, None] * x_hat_detached, dim=-2, keepdim=True)))
+                else:
+                    outputs = squash(torch.sum(c[:, :, :, None] * x_hat_detached, dim=-2, keepdim=True))
                 # outputs = squash(torch.matmul(c[:, :, None, :], x_hat_detached))  # alternative way
 
                 # outputs.size       =[batch, out_num_caps, 1,           out_dim_caps]
@@ -92,9 +101,13 @@ class PrimaryCapsule(nn.Module):
         super(PrimaryCapsule, self).__init__()
         self.dim_caps = dim_caps
         self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
+        if opt.model_high_bn:
+            self.conv2d_bn = nn.BatchNorm2d(out_channels)
 
     def forward(self, x):
         outputs = self.conv2d(x)
+        if opt.model_high_bn:
+            outputs = self.conv2d_bn(outputs)
         outputs = outputs.view(x.size(0), -1, self.dim_caps)
         return squash(outputs)
 

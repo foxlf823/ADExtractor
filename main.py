@@ -37,10 +37,10 @@ elif opt.whattodo==2:
     else:
         os.makedirs(opt.pretrain)
 
-    train_token, train_entity, train_relation, _ = preprocess.loadPreprocessData(opt.traindata)
-    test_token, test_entity, test_relation, _ = preprocess.loadPreprocessData(opt.testdata)
+    train_token, train_entity, train_relation, train_name = preprocess.loadPreprocessData(opt.traindata)
+    test_token, test_entity, test_relation, test_name = preprocess.loadPreprocessData(opt.testdata)
 
-    trainandtest.pretrain(train_token, train_entity, train_relation, test_token, test_entity, test_relation)
+    trainandtest.pretrain(train_token, train_entity, train_relation, train_name, test_token, test_entity, test_relation, test_name)
 elif opt.whattodo==3:
     if os.path.exists(opt.output):
         shutil.rmtree(opt.output)
@@ -62,8 +62,8 @@ else:
     test_token, test_entity, test_relation, test_name = preprocess.loadPreprocessData(opt.testdata)
 
     # trainandtest.test(test_token, test_entity, test_relation, test_name, result_dumpdir)
-    trainandtest.test1(test_token, test_entity, test_relation, test_name, result_dumpdir)
-
+    #trainandtest.test1(test_token, test_entity, test_relation, test_name, result_dumpdir)
+    trainandtest.test2(test_token, test_entity, test_relation, test_name, result_dumpdir)
 
 
 

@@ -29,6 +29,10 @@ parser.add_argument('-max_epoch', type=int, default=100)
 parser.add_argument('-learning_rate', type=float, default=0.0001)
 parser.add_argument('-grad_clip', type=float, default=5.0)
 parser.add_argument('-dropout', type=float, default=0.4)
+# training strategy, all means use all instances, balance means each class use one in each batch
+# no-unk means don't use unknown instance
+parser.add_argument('-strategy', default='all', help='all, balance, no-unk, part-unk')
+parser.add_argument('-unk_ratio', type=float, default=0.03) # only work when 'part-unk'
 
 # hyper-parameter
 parser.add_argument('-position_emb_size', default=10, type=int)
@@ -41,11 +45,13 @@ parser.add_argument('-shared_hidden_size', type=int, default=256)
 parser.add_argument('-F_layers', type=int, default=1)
 parser.add_argument('-kernel_num', type=int, default=200)
 parser.add_argument('-kernel_sizes', type=int, nargs='+', default=[3,4,5])
+parser.add_argument('-model_bn', action='store_true', default=False)
 
 # high-level model
 parser.add_argument('-model_high', default='capsule', help='capsule, mlp, capsule_em')
 parser.add_argument('-dim_enlarge_rate', type=int, default=2)
 parser.add_argument('-init_dim_cap', type=int, default=4)
+parser.add_argument('-model_high_bn', action='store_true', default=False)
 
 
 

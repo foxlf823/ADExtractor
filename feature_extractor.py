@@ -34,6 +34,9 @@ class CNNFeatureExtractor(nn.Module):
 
         self.convs = nn.ModuleList([nn.Conv2d(1, kernel_num, (K, self.input_size)) for K in kernel_sizes])
 
+        if opt.model_bn:
+            self.convs_bn = nn.ModuleList([nn.BatchNorm2d(kernel_num) for K in kernel_sizes])
+
         # at least 1 hidden layer so that the output size is hidden_size
         assert num_layers > 0, 'Invalid layer numbers'
         self.fcnet = nn.Sequential()
@@ -47,6 +50,8 @@ class CNNFeatureExtractor(nn.Module):
                 self.fcnet.add_module('f-linear-{}'.format(i), nn.Linear(hidden_size, hidden_size))
             # if batch_norm:
             #     self.fcnet.add_module('f-bn-{}'.format(i), nn.BatchNorm1d(hidden_size))
+            if opt.model_bn:
+                self.fcnet.add_module('f-bn-{}'.format(i), nn.BatchNorm1d(hidden_size))
             self.fcnet.add_module('f-relu-{}'.format(i), nn.ReLU())
 
     def forward(self, tokens, positions1, positions2, lengths):
@@ -61,7 +66,10 @@ class CNNFeatureExtractor(nn.Module):
 
         # conv
         embeds = embeds.unsqueeze(1)  # batch_size, 1, seq_len, emb_size
-        x = [functional.relu(conv(embeds)).squeeze(3) for conv in self.convs]
+        if opt.model_bn:
+            x = [functional.relu(self.convs_bn[i](conv(embeds))).squeeze(3) for i, conv in enumerate(self.convs)]
+        else:
+            x = [functional.relu(conv(embeds)).squeeze(3) for conv in self.convs]
         x = [functional.max_pool1d(i, i.size(2)).squeeze(2) for i in x]
         x = torch.cat(x, 1)
         # fcnet
