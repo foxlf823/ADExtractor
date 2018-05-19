@@ -643,6 +643,9 @@ def train():
     iter_parameter = itertools.chain(*map(list, [feature_extractor.parameters(), m.parameters()]))
     optimizer = optim.Adam(iter_parameter, lr=opt.learning_rate)
 
+    if opt.tune_wordemb == False:
+        utils.freeze_layer(feature_extractor.word_emb)
+        #feature_extractor.word_emb.weight.requires_grad = False
 
     best_acc = 0.0
     logging.info("start training ...")

@@ -489,3 +489,7 @@ def endless_get_next_batch_without_rebatch(loaders, iters):
     if len(target) < 2:
         return endless_get_next_batch_without_rebatch(loaders, iters)
     return token, position1, position2, length, target
+
+def freeze_layer(layer):
+    for param in layer.parameters():
+        param.requires_grad = False

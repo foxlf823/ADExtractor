@@ -33,6 +33,7 @@ parser.add_argument('-dropout', type=float, default=0.4)
 # no-unk means don't use unknown instance
 parser.add_argument('-strategy', default='all', help='all, balance, no-unk, part-unk')
 parser.add_argument('-unk_ratio', type=float, default=0.03) # only work when 'part-unk'
+parser.add_argument('-tune_wordemb', action='store_true', default=False)
 
 # hyper-parameter
 parser.add_argument('-position_emb_size', default=10, type=int)
