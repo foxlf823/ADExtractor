@@ -1,21 +1,42 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import feature_extractor
 
 class MLP(nn.Module):
-    def __init__(self, input_size, relation_vocab):
+    def __init__(self, input_size, relation_vocab, entity_type_vocab, entity_vocab):
         super(MLP, self).__init__()
 
-        self.linear = nn.Linear(input_size, relation_vocab.vocab_size, bias=False)
+        self.linear = nn.Linear(input_size+2*entity_type_vocab.emb_size+2*entity_vocab.emb_size, relation_vocab.vocab_size, bias=False)
+
+        self.entity_type_emb = nn.Embedding(entity_type_vocab.vocab_size, entity_type_vocab.emb_size,
+                                          padding_idx=entity_type_vocab.pad_idx)
+        self.entity_type_emb.weight.data = torch.from_numpy(entity_type_vocab.embeddings).float()
+
+        self.entity_emb = nn.Embedding(entity_vocab.vocab_size, entity_vocab.emb_size,
+                                          padding_idx=entity_vocab.pad_idx)
+        self.entity_emb.weight.data = torch.from_numpy(entity_vocab.embeddings).float()
+
+        self.dot_att = feature_extractor.DotAttentionLayer(entity_vocab.emb_size)
 
         self.criterion = nn.CrossEntropyLoss()
 
-    def forward(self, x):
+    def forward(self, hidden_features, x2, x1):
+        tokens, positions1, positions2, e1_token, e2_token = x2
+        e1_length, e2_length, e1_type, e2_type, lengths = x1
 
-        x = self.linear(x)
+        e1_t = self.entity_type_emb(e1_type)
+        e2_t = self.entity_type_emb(e2_type)
 
-        return x
+        e1 = self.entity_emb(e1_token)
+        e1 = self.dot_att((e1, e1_length))
+        e2 = self.entity_emb(e2_token)
+        e2 = self.dot_att((e2, e2_length))
+
+        x = torch.cat((hidden_features, e1_t, e2_t, e1, e2), dim=1)
+        output = self.linear(x)
+
+        return output
 
     def loss(self, by, y_pred):
 

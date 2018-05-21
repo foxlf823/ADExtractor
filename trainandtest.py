@@ -22,49 +22,36 @@ import copy
 
 def dataset_stat(tokens, entities, relations):
     word_alphabet = sortedcontainers.SortedSet()
-    # relation may inter-sentence, so stat position based on sentence firstly, and relation instance secondly.
-    position_alphabet = sortedcontainers.SortedSet()
-    max_sequence_length = 0
-
     relation_alphabet = sortedcontainers.SortedSet()
+    entity_type_alphabet = sortedcontainers.SortedSet()
+    entity_alphabet = sortedcontainers.SortedSet()
 
     for i, doc_token in enumerate(tokens):
+
+        doc_entity = entities[i]
+        doc_relation = relations[i]
 
         sent_idx = 0
         sentence = doc_token[(doc_token['sent_idx'] == sent_idx)]
         while sentence.shape[0] != 0:
             for _, token in sentence.iterrows():
                 word_alphabet.add(utils.normalizeWord(token['text']))
-            if sentence.shape[0] > max_sequence_length:
-                max_sequence_length = sentence.shape[0]
+
+            entities_in_sentence = doc_entity[(doc_entity['sent_idx'] == sent_idx)]
+            for _, entity in entities_in_sentence.iterrows():
+                entity_type_alphabet.add(entity['type'])
+                tk_idx = entity['tf_start']
+                while tk_idx <= entity['tf_end']:
+                    entity_alphabet.add(utils.normalizeWord(sentence.iloc[tk_idx, 0])) # assume 'text' is in 0 column
+                    tk_idx += 1
+
             sent_idx += 1
             sentence = doc_token[(doc_token['sent_idx'] == sent_idx)]
 
-
-    for i, doc_relation in enumerate(relations):
-
-        doc_token = tokens[i]
-        doc_entity = entities[i]
-
-        for index, relation in doc_relation.iterrows():
-
+        for _, relation in doc_relation.iterrows():
             relation_alphabet.add(relation['type'])
 
-            # find entity mention
-            entity1 = doc_entity[(doc_entity['id']==relation['entity1_id'])].iloc[0]
-            entity2 = doc_entity[(doc_entity['id'] == relation['entity2_id'])].iloc[0]
-            # find all sentences between entity1 and entity2
-            former = entity1 if entity1['start']<entity2['start'] else entity2
-            latter = entity2 if entity1['start']<entity2['start'] else entity1
-            context_token = doc_token[(doc_token['sent_idx'] >= former['sent_idx']) & (doc_token['sent_idx'] <= latter['sent_idx'])]
-            if context_token.shape[0] > max_sequence_length:
-                max_sequence_length = context_token.shape[0]
-
-    for i in range(max_sequence_length):
-        position_alphabet.add(i)
-        position_alphabet.add(-i)
-
-    return word_alphabet, position_alphabet, relation_alphabet
+    return word_alphabet, relation_alphabet, entity_type_alphabet, entity_alphabet
 
 
 
@@ -275,13 +262,14 @@ def test1(test_token, test_entity, test_relation, test_name, result_dumpdir):
 
                 if former_idx < latter_idx:
 
-                    former = doc_entity.loc[former_idx]
-                    latter = doc_entity.loc[latter_idx]
+                    former = doc_entity.iloc[former_idx]
+                    latter = doc_entity.iloc[latter_idx]
 
                     if math.fabs(latter['sent_idx']-former['sent_idx']) >= opt.sent_window:
                         continue
 
-                    if utils.relationConstraint(former['type'], latter['type']) == False:
+                    type_constraint = utils.relationConstraint(former['type'], latter['type'])
+                    if type_constraint == 0:
                         continue
 
                     context_token = doc_token[(doc_token['sent_idx'] >= former['sent_idx']) & (
@@ -353,49 +341,13 @@ def test1(test_token, test_entity, test_relation, test_name, result_dumpdir):
 # used when entities have been enumerated, just translate into bioc format
 def test2(test_token, test_entity, test_relation, test_name, result_dumpdir):
     logging.info("loading ... vocab")
-    word_vocab = pickle.load(open(os.path.join(opt.pretrain, 'word_vocab.pkl'), 'rb'))
     relation_vocab = pickle.load(open(os.path.join(opt.pretrain, 'relation_vocab.pkl'), 'rb'))
-    position_vocab1 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab1.pkl'), 'rb'))
-    position_vocab2 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab2.pkl'), 'rb'))
 
     logging.info("loading ... result")
     results = pickle.load(open(os.path.join(opt.output, 'results.pkl'), "rb"))
 
-    logging.info("loading ... model")
-    if opt.model.lower() == 'lstm':
-        feature_extractor = LSTMFeatureExtractor(word_vocab, position_vocab1, position_vocab2,
-                                                 opt.F_layers, opt.shared_hidden_size, opt.dropout)
-    elif opt.model.lower() == 'cnn':
-        feature_extractor = CNNFeatureExtractor(word_vocab, position_vocab1, position_vocab2,
-                                                opt.F_layers, opt.shared_hidden_size,
-                                  opt.kernel_num, opt.kernel_sizes, opt.dropout)
-    else:
-        raise RuntimeError('Unknown feature extractor {}'.format(opt.model))
-    if torch.cuda.is_available():
-        feature_extractor = feature_extractor.cuda(opt.gpu)
-
-    if opt.model_high == 'capsule':
-        # m = capsule.CapsuleNet(opt.shared_hidden_size, opt.dim_enlarge_rate, opt.init_dim_cap, relation_vocab)
-        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab)
-    elif opt.model_high == 'capsule_em':
-        m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
-    elif opt.model_high == 'mlp':
-        m = baseline.MLP(opt.shared_hidden_size, relation_vocab)
-    else:
-        raise RuntimeError('Unknown model {}'.format(opt.model_high))
-    if torch.cuda.is_available():
-        m = m.cuda(opt.gpu)
-
-    feature_extractor.load_state_dict(torch.load(os.path.join(opt.output, 'feature_extractor.pth')))
-    m.load_state_dict(torch.load(os.path.join(opt.output, 'model.pth')))
-    m.eval()
-
-    my_collate = utils.sorted_collate if opt.model == 'lstm' else utils.unsorted_collate
-
     for i in tqdm(range(len(test_relation))):  # this procedure should keep consistent with utils.getRelationInstance1
 
-        doc_relation = test_relation[i]
-        doc_token = test_token[i]
         doc_entity = test_entity[i]
         doc_name = test_name[i]
 
@@ -445,18 +397,26 @@ def test2(test_token, test_entity, test_relation, test_name, result_dumpdir):
             bioc.dump(collection, fp)
 
 def pretrain(train_token, train_entity, train_relation, train_name, test_token, test_entity, test_relation, test_name):
-    word_alphabet, position_alphabet, relation_alphabet = dataset_stat(train_token, train_entity, train_relation)
+    word_alphabet, relation_alphabet, entity_type_alphabet, entity_alphabet = dataset_stat(train_token, train_entity, train_relation)
     logging.info("training dataset stat completed")
     if opt.full_data:
-        test_word_alphabet, test_position_alphabet, test_relation_alphabet = dataset_stat(test_token, test_entity, test_relation)
+        test_word_alphabet, test_relation_alphabet, test_entity_type_alphabet, test_entity_alphabet = dataset_stat(test_token, test_entity, test_relation)
         word_alphabet = word_alphabet | test_word_alphabet
-        position_alphabet = position_alphabet | test_position_alphabet
         relation_alphabet = relation_alphabet | test_relation_alphabet
-        del test_word_alphabet, test_position_alphabet, test_relation_alphabet
+        entity_type_alphabet = entity_type_alphabet | test_entity_type_alphabet
+        entity_alphabet = entity_alphabet | test_entity_alphabet
+        del test_word_alphabet, test_relation_alphabet, test_entity_type_alphabet, test_entity_alphabet
         logging.info("test dataset stat completed")
+
+    position_alphabet = sortedcontainers.SortedSet()
+    for i in range(opt.max_seq_len):
+        position_alphabet.add(i)
+        position_alphabet.add(-i)
 
     relation_vocab = vocab.Vocab(relation_alphabet, None, opt.relation_emb_size)
     word_vocab = vocab.Vocab(word_alphabet, opt.emb, opt.word_emb_size)
+    entity_type_vocab = vocab.Vocab(entity_type_alphabet, None, opt.entity_type_emb_size)
+    entity_vocab = vocab.Vocab(entity_alphabet, None, opt.entity_emb_size)
     position_vocab1 = vocab.Vocab(position_alphabet, None, opt.position_emb_size)
     position_vocab2 = vocab.Vocab(position_alphabet, None, opt.position_emb_size)
     logging.info("vocab build completed")
@@ -464,6 +424,8 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     logging.info("saving ... vocab")
     pickle.dump(word_vocab, open(os.path.join(opt.pretrain, 'word_vocab.pkl'), "wb"), True)
     pickle.dump(relation_vocab, open(os.path.join(opt.pretrain, 'relation_vocab.pkl'), "wb"), True)
+    pickle.dump(entity_type_vocab, open(os.path.join(opt.pretrain, 'entity_type_vocab.pkl'), "wb"), True)
+    pickle.dump(entity_vocab, open(os.path.join(opt.pretrain, 'entity_vocab.pkl'), "wb"), True)
     pickle.dump(position_vocab1, open(os.path.join(opt.pretrain, 'position_vocab1.pkl'), "wb"), True)
     pickle.dump(position_vocab2, open(os.path.join(opt.pretrain, 'position_vocab2.pkl'), "wb"), True)
 
@@ -475,16 +437,16 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     # One relation instance is composed of X (a pair of entities and their context), Y (relation label).
     # train_X, train_Y = utils.getRelatonInstance(train_token, train_entity, train_relation, word_vocab, relation_vocab, position_vocab1,
     #                                             position_vocab2)
-    train_X, train_Y, _ = utils.getRelationInstance1(train_token, train_entity, train_relation, train_name, word_vocab, relation_vocab, position_vocab1,
-                                                position_vocab2)
+    train_X, train_Y, _ = utils.getRelationInstance2(train_token, train_entity, train_relation, train_name, word_vocab, relation_vocab, entity_type_vocab,
+                                                     entity_vocab, position_vocab1, position_vocab2)
     logging.info("training instance build completed, total {}".format(len(train_Y)))
     pickle.dump(train_X, open(os.path.join(opt.pretrain, 'train_X.pkl'), "wb"), True)
     pickle.dump(train_Y, open(os.path.join(opt.pretrain, 'train_Y.pkl'), "wb"), True)
 
     # test_X, test_Y = utils.getRelatonInstance(test_token, test_entity, test_relation, word_vocab, relation_vocab, position_vocab1,
     #                                           position_vocab2)
-    test_X, test_Y, test_other = utils.getRelationInstance1(test_token, test_entity, test_relation, test_name, word_vocab, relation_vocab, position_vocab1,
-                                              position_vocab2)
+    test_X, test_Y, test_other = utils.getRelationInstance2(test_token, test_entity, test_relation, test_name, word_vocab, relation_vocab, entity_type_vocab,
+                                                            entity_vocab, position_vocab1, position_vocab2)
     logging.info("test instance build completed, total {}".format(len(test_Y)))
     pickle.dump(test_X, open(os.path.join(opt.pretrain, 'test_X.pkl'), "wb"), True)
     pickle.dump(test_Y, open(os.path.join(opt.pretrain, 'test_Y.pkl'), "wb"), True)
@@ -516,7 +478,7 @@ def makeDatasetForEachClass(train_X, train_Y, relation_vocab, my_collate):
         y = train_Y_classified[class_name]
         train_numbers.append((class_name, len(y)))
 
-        train_set = utils.RelationDataset(x, y, opt.max_seq_len)
+        train_set = utils.RelationDataset(x, y)
         train_sets.append(train_set)
         train_sampler = torch.utils.data.sampler.RandomSampler(train_set)
         train_samples.append(train_sampler)
@@ -538,7 +500,7 @@ def makeDatasetWithoutUnknown(test_X, test_Y, relation_vocab, b_shuffle, my_coll
             test_X_remove_unk.append(x)
             test_Y_remove_unk.append(y)
 
-    test_set = utils.RelationDataset(test_X_remove_unk, test_Y_remove_unk, opt.max_seq_len)
+    test_set = utils.RelationDataset(test_X_remove_unk, test_Y_remove_unk)
     test_loader = DataLoader(test_set, opt.batch_size, shuffle=b_shuffle, collate_fn=my_collate)
     it = iter(test_loader)
     logging.info("instance after removing unknown, {}".format(len(test_Y_remove_unk)))
@@ -562,7 +524,7 @@ def makeDatasetUnknown(test_X, test_Y, relation_vocab, my_collate, ratio):
             test_X_remove_unk.append(x)
             test_Y_remove_unk.append(y)
 
-    test_set = utils.RelationDataset(test_X_remove_unk, test_Y_remove_unk, opt.max_seq_len)
+    test_set = utils.RelationDataset(test_X_remove_unk, test_Y_remove_unk)
 
     test_loader = DataLoader(test_set, opt.batch_size, shuffle=False, sampler=randomSampler(test_Y_remove_unk, ratio), collate_fn=my_collate)
     it = iter(test_loader)
@@ -574,6 +536,8 @@ def train():
     logging.info("loading ... vocab")
     word_vocab = pickle.load(open(os.path.join(opt.pretrain, 'word_vocab.pkl'), 'rb'))
     relation_vocab = pickle.load(open(os.path.join(opt.pretrain, 'relation_vocab.pkl'), 'rb'))
+    entity_type_vocab = pickle.load(open(os.path.join(opt.pretrain, 'entity_type_vocab.pkl'), 'rb'))
+    entity_vocab = pickle.load(open(os.path.join(opt.pretrain, 'entity_vocab.pkl'), 'rb'))
     position_vocab1 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab1.pkl'), 'rb'))
     position_vocab2 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab2.pkl'), 'rb'))
 
@@ -586,7 +550,7 @@ def train():
 
 
     if opt.strategy == 'all':
-        train_loader = DataLoader(utils.RelationDataset(train_X, train_Y, opt.max_seq_len),
+        train_loader = DataLoader(utils.RelationDataset(train_X, train_Y),
                                   opt.batch_size, shuffle=True, collate_fn=my_collate)
         train_iter = iter(train_loader)
         num_iter = len(train_loader)
@@ -612,7 +576,7 @@ def train():
     test_Other = pickle.load(open(os.path.join(opt.pretrain, 'test_Other.pkl'), 'rb'))
     logging.info("total test instance {}".format(len(test_Y)))
     #test_loader, _ = makeDatasetWithoutUnknown(test_X, test_Y, relation_vocab, False, my_collate)
-    test_loader = DataLoader(utils.RelationDataset(test_X, test_Y, opt.max_seq_len),
+    test_loader = DataLoader(utils.RelationDataset(test_X, test_Y),
                               opt.batch_size, shuffle=False, collate_fn=my_collate) # drop_last=True
 
 
@@ -634,7 +598,7 @@ def train():
     elif opt.model_high == 'capsule_em':
         m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
     elif opt.model_high == 'mlp':
-        m = baseline.MLP(opt.shared_hidden_size, relation_vocab)
+        m = baseline.MLP(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab)
     else:
         raise RuntimeError('Unknown model {}'.format(opt.model_high))
     if torch.cuda.is_available():
@@ -657,18 +621,15 @@ def train():
         for i in tqdm(range(num_iter)):
 
             if opt.strategy == 'all' or opt.strategy == 'no-unk' or opt.strategy == 'part-unk':
-                tokens, positions1, positions2, lengths, targets = utils.endless_get_next_batch_without_rebatch(train_loader, train_iter)
+                x2, x1, targets = utils.endless_get_next_batch_without_rebatch(train_loader, train_iter)
 
             elif opt.strategy == 'balance':
-                tokens, positions1, positions2, lengths, targets = utils.endless_get_next_batch(train_loaders,
-                                                                                                train_iters)
+                x2, x1, targets = utils.endless_get_next_batch(train_loaders, train_iters)
             else:
                 raise RuntimeError("unsupport training strategy")
 
-
-
-            hidden_features = feature_extractor.forward(tokens, positions1, positions2, lengths)
-            outputs = m.forward(hidden_features)
+            hidden_features = feature_extractor.forward(x2, x1)
+            outputs = m.forward(hidden_features, x2, x1)
             loss = m.loss(targets, outputs)
 
             optimizer.zero_grad()
@@ -676,15 +637,15 @@ def train():
             torch.nn.utils.clip_grad_norm_(iter_parameter, opt.grad_clip)
             optimizer.step()
 
-            total += tokens.size(0)
+            total += targets.size(0)
             _, pred = torch.max(outputs, 1)
             correct += (pred == targets).sum().item()
 
             if opt.strategy == 'part-unk':
-                tokens, positions1, positions2, lengths, targets = utils.endless_get_next_batch_without_rebatch(
-                    unk_loader, unk_iter)
-                hidden_features = feature_extractor.forward(tokens, positions1, positions2, lengths)
-                outputs = m.forward(hidden_features)
+                x2, x1, targets = utils.endless_get_next_batch_without_rebatch(unk_loader, unk_iter)
+
+                hidden_features = feature_extractor.forward(x2, x1)
+                outputs = m.forward(hidden_features, x2, x1)
                 loss = m.loss(targets, outputs)
 
                 optimizer.zero_grad()
@@ -720,33 +681,33 @@ def evaluate(feature_extractor, m, loader, other):
     start, end = 0, 0
     correct = 0
     total = 0
-    for tokens, positions1, positions2, lengths, targets in it:
+    iii = 0
+    for x2, x1, targets in it:
 
-        if tokens.size(0) == 1 and (opt.model_bn or opt.model_high_bn):
-            tokens = tokens.expand(2, -1)
-            positions1 = positions1.expand(2, -1)
-            positions2 = positions2.expand(2, -1)
-            lengths = lengths.expand(2)
-            targets = targets.expand(2)
+        if targets.size(0) == 1 and (opt.model_bn or opt.model_high_bn):
+            for i, _ in enumerate(x2):
+                x2[i] = x2[i].expand(2, -1)
+
+            for i, _ in enumerate(x1):
+                x1[i] = x1[i].expand(2)
+
 
         with torch.no_grad():
-            hidden_features = feature_extractor.forward(tokens, positions1, positions2, lengths)
-            outputs = m.forward(hidden_features)
+
+            hidden_features = feature_extractor.forward(x2, x1)
+            outputs = m.forward(hidden_features, x2, x1)
 
             _, pred = torch.max(outputs, 1)
             total += targets.size(0)
             correct += (pred == targets).sum().data.item()
 
         start = end
-        end = end + tokens.size(0)
-
-        # batch_other = copy.deepcopy(other[start:end])
-        # for i, d in enumerate(batch_other):
-        #     d["type"] = pred[i].item()
-        # results.extend(batch_other)
+        end = end + targets.size(0)
 
         for i, d in enumerate(other[start:end]):
             d["type"] = pred[i].item()
+
+        iii += 1
 
     acc = 100.0 * correct / total
     return acc

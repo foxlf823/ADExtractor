@@ -6,10 +6,12 @@ parser.add_argument('-verbose', action='store_true', help='1-print debug logs')
 parser.add_argument('-gpu', type=int, default=0)
 
 # directory
-parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0_debug")
-parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data_debug")
+# parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0_debug")
+# parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data_debug")
 # parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0")
 # parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data")
+parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/debug")
+parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/debug_test")
 parser.add_argument('-output', type=str, default="./output")
 parser.add_argument('-emb', type=str, default="/Users/feili/project/emb_100_for_debug.txt")
 #parser.add_argument('-emb', type=str, default="/Users/feili/project/man/data/w2v/word2vec.txt")
@@ -17,7 +19,7 @@ parser.add_argument('-emb', type=str, default="/Users/feili/project/emb_100_for_
 parser.add_argument('-pretrain', type=str, default="./pretrain")
 
 # preprocessing
-parser.add_argument('-max_seq_len', type=int, default=0) # set to <=0 to not truncate
+parser.add_argument('-max_seq_len', type=int, default=500) # max sequence length, related to input length, position emb
 parser.add_argument('-full_data', action='store_true', default=False)
 parser.add_argument('-pad_idx', default=1, type=int)
 parser.add_argument('-sent_window', default=3, type=int)
@@ -39,6 +41,8 @@ parser.add_argument('-tune_wordemb', action='store_true', default=False)
 parser.add_argument('-position_emb_size', default=10, type=int)
 parser.add_argument('-word_emb_size', default=50, type=int)
 parser.add_argument('-relation_emb_size', default=10, type=int)
+parser.add_argument('-entity_type_emb_size', default=10, type=int)
+parser.add_argument('-entity_emb_size', default=10, type=int)
 
 # feature extractor
 parser.add_argument('-model', default='cnn', help='cnn, lstm, other')

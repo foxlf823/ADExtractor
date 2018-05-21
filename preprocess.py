@@ -73,14 +73,32 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
             if sent_idx == -1:
                 logging.debug('cannot find entity {} in all sentences of {}'.format(entity.id, fileName))
                 continue
-            anno_data.append([entity.id, start, end, entity.text, entity.infons['type'], sent_idx])
+
+            df_sentence = df_doc[(df_doc['sent_idx'] == sent_idx)]
+            tf_start = -1
+            tf_end = -1
+            token_num = df_sentence.shape[0]
+
+            for tf_idx in range(token_num):
+                token = df_sentence.iloc[tf_idx]
+
+                if token['start'] == start:
+                    tf_start = tf_idx
+                if token['end'] == end:
+                    tf_end = tf_idx
+
+            if tf_start == -1 or tf_end == -1:  # due to tokenization error, e.g., 10_197, hyper-CVAD-based vs hyper-CVAD
+                logging.debug('not found tf_start or tf_end of entity {}'.format(entity.id))
+                continue
+
+            anno_data.append([entity.id, start, end, entity.text, entity.infons['type'], sent_idx, tf_start, tf_end])
             entity_span_in_this_passage.append([start, end])
         else: # some entities overlap with current entity
             # raise RuntimeError('entity overlapped in {}'.format(fileName))
             logging.debug('file {}, entity {}, overlapped'.format(fileName, entity.id))
             continue
 
-    df_entity = pd.DataFrame(anno_data, columns = ['id','start','end','text','type', 'sent_idx']) # contains entity information
+    df_entity = pd.DataFrame(anno_data, columns = ['id','start','end','text','type', 'sent_idx', 'tf_start', 'tf_end']) # contains entity information
     df_entity = df_entity.sort_values('start')
     df_entity.index = range(df_entity.shape[0])
 

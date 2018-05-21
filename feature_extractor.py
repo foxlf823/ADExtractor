@@ -54,9 +54,8 @@ class CNNFeatureExtractor(nn.Module):
                 self.fcnet.add_module('f-bn-{}'.format(i), nn.BatchNorm1d(hidden_size))
             self.fcnet.add_module('f-relu-{}'.format(i), nn.ReLU())
 
-    def forward(self, tokens, positions1, positions2, lengths):
-
-        batch_size = len(tokens)
+    def forward(self, x2, x1):
+        tokens, positions1, positions2, e1_token, e2_token = x2
 
         tokens = self.word_emb(tokens)  # (bz, seq, emb)
         positions1 = self.position1_emb(positions1)
@@ -106,7 +105,9 @@ class LSTMFeatureExtractor(nn.Module):
 
         self.attn = DotAttentionLayer(hidden_size)
 
-    def forward(self, tokens, positions1, positions2, lengths):
+    def forward(self, x2, x1):
+        tokens, positions1, positions2, e1_token, e2_token = x2
+        e1_length, e2_length, e1_type, e2_type, lengths = x1
 
         lengths_list = lengths.tolist()
         batch_size = tokens.size(0)
