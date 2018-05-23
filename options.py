@@ -6,12 +6,12 @@ parser.add_argument('-verbose', action='store_true', help='1-print debug logs')
 parser.add_argument('-gpu', type=int, default=0)
 
 # directory
-# parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0_debug")
-# parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data_debug")
+parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0_debug")
+parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data_debug")
 # parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/MADE-1.0")
 # parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/made_test_data")
-parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/debug")
-parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/debug_test")
+# parser.add_argument('-traindata', type=str, default="/Users/feili/Desktop/umass/MADE/debug")
+# parser.add_argument('-testdata', type=str, default="/Users/feili/Desktop/umass/MADE/debug_test")
 parser.add_argument('-output', type=str, default="./output")
 parser.add_argument('-emb', type=str, default="/Users/feili/project/emb_100_for_debug.txt")
 #parser.add_argument('-emb', type=str, default="/Users/feili/project/man/data/w2v/word2vec.txt")
@@ -40,9 +40,9 @@ parser.add_argument('-tune_wordemb', action='store_true', default=False)
 # hyper-parameter
 parser.add_argument('-position_emb_size', default=10, type=int)
 parser.add_argument('-word_emb_size', default=50, type=int)
-parser.add_argument('-relation_emb_size', default=10, type=int)
-parser.add_argument('-entity_type_emb_size', default=10, type=int)
-parser.add_argument('-entity_emb_size', default=10, type=int)
+parser.add_argument('-relation_emb_size', default=8, type=int)
+parser.add_argument('-entity_type_emb_size', default=8, type=int)
+parser.add_argument('-entity_emb_size', default=8, type=int)
 
 # feature extractor
 parser.add_argument('-model', default='cnn', help='cnn, lstm, other')
@@ -57,8 +57,9 @@ parser.add_argument('-model_high', default='capsule', help='capsule, mlp, capsul
 parser.add_argument('-dim_enlarge_rate', type=int, default=2)
 parser.add_argument('-init_dim_cap', type=int, default=4)
 parser.add_argument('-model_high_bn', action='store_true', default=False)
-
-
+parser.add_argument('-reconstruct', action='store_true', default=False)
+parser.add_argument('-lam_recon', default=0.0005 * 256, type=float,
+                    help="The coefficient for the loss of decoder")
 
 
 opt = parser.parse_args()

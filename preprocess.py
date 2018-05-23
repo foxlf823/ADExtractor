@@ -10,6 +10,7 @@ import nltk
 import logging
 import os
 import shutil
+import utils
 
 def preprocess(basedir):
     annotation_dir = join(basedir, 'annotations')
@@ -26,6 +27,10 @@ def preprocess(basedir):
 
     for idx in tqdm(range(len(annotation_files))):
         fileName = annotation_files[idx]
+        # if fileName.find('7_472')!= -1: # feili
+        #     pass
+        # else:
+        #     continue
 
         df_doc, df_entity, df_relation = processOneFile(fileName, annotation_dir, corpus_dir)
         fileName = fileName[0:fileName.find('.')]
@@ -65,6 +70,11 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
     for entity in bioc_passage.annotations:
         start = entity.locations[0].offset
         end = entity.locations[0].end
+
+        # if entity.id == "50151" : # feili
+        #     pass
+        # else:
+        #     continue
 
         tmp_df = pd.DataFrame(entity_span_in_this_passage, columns = ['start','end'])
         result_df = tmp_df[((tmp_df['start']<=start)&(tmp_df['end']>start)) | ((tmp_df['start']<end)&(tmp_df['end']>=end))]
@@ -131,7 +141,8 @@ def get_text_file(filename):
     return open(filename,'r').read()
 
 def text_tokenize(txt, sent_start):
-    tokens=nltk.word_tokenize(txt)
+
+    tokens=utils.my_tokenize(txt)
     offset = 0
     for token in tokens:
         offset = txt.find(token, offset)

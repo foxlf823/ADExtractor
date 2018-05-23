@@ -77,8 +77,7 @@ def test(test_token, test_entity, test_relation, test_name, result_dumpdir):
         feature_extractor = feature_extractor.cuda(opt.gpu)
 
     if opt.model_high == 'capsule':
-        # m = capsule.CapsuleNet(opt.shared_hidden_size, opt.dim_enlarge_rate, opt.init_dim_cap, relation_vocab)
-        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab)
+        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab)
     elif opt.model_high == 'capsule_em':
         m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
     elif opt.model_high == 'mlp':
@@ -213,8 +212,7 @@ def test1(test_token, test_entity, test_relation, test_name, result_dumpdir):
         feature_extractor = feature_extractor.cuda(opt.gpu)
 
     if opt.model_high == 'capsule':
-        # m = capsule.CapsuleNet(opt.shared_hidden_size, opt.dim_enlarge_rate, opt.init_dim_cap, relation_vocab)
-        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab)
+        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab)
     elif opt.model_high == 'capsule_em':
         m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
     elif opt.model_high == 'mlp':
@@ -593,8 +591,7 @@ def train():
         feature_extractor = feature_extractor.cuda(opt.gpu)
 
     if opt.model_high == 'capsule':
-        # m = capsule.CapsuleNet(opt.shared_hidden_size, opt.dim_enlarge_rate, opt.init_dim_cap, relation_vocab)
-        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab)
+        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab)
     elif opt.model_high == 'capsule_em':
         m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
     elif opt.model_high == 'mlp':
@@ -629,8 +626,16 @@ def train():
                 raise RuntimeError("unsupport training strategy")
 
             hidden_features = feature_extractor.forward(x2, x1)
-            outputs = m.forward(hidden_features, x2, x1)
-            loss = m.loss(targets, outputs)
+
+            if opt.model_high == 'capsule':
+                outputs, x_recon = m.forward(hidden_features, x2, x1, targets)
+                loss = m.loss(targets, outputs, hidden_features, x2, x1, x_recon, opt.lam_recon)
+            elif opt.model_high == 'mlp':
+                outputs = m.forward(hidden_features, x2, x1)
+                loss = m.loss(targets, outputs)
+            else:
+                raise RuntimeError('Unknown model {}'.format(opt.model_high))
+
 
             optimizer.zero_grad()
             loss.backward()
@@ -645,8 +650,15 @@ def train():
                 x2, x1, targets = utils.endless_get_next_batch_without_rebatch(unk_loader, unk_iter)
 
                 hidden_features = feature_extractor.forward(x2, x1)
-                outputs = m.forward(hidden_features, x2, x1)
-                loss = m.loss(targets, outputs)
+
+                if opt.model_high == 'capsule':
+                    outputs, x_recon = m.forward(hidden_features, x2, x1, targets)
+                    loss = m.loss(targets, outputs, hidden_features, x2, x1, x_recon, opt.lam_recon)
+                elif opt.model_high == 'mlp':
+                    outputs = m.forward(hidden_features, x2, x1)
+                    loss = m.loss(targets, outputs)
+                else:
+                    raise RuntimeError('Unknown model {}'.format(opt.model_high))
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -695,7 +707,15 @@ def evaluate(feature_extractor, m, loader, other):
         with torch.no_grad():
 
             hidden_features = feature_extractor.forward(x2, x1)
-            outputs = m.forward(hidden_features, x2, x1)
+
+            if opt.model_high == 'capsule':
+                outputs, _ = m.forward(hidden_features, x2, x1)
+
+            elif opt.model_high == 'mlp':
+                outputs = m.forward(hidden_features, x2, x1)
+
+            else:
+                raise RuntimeError('Unknown model {}'.format(opt.model_high))
 
             _, pred = torch.max(outputs, 1)
             total += targets.size(0)
