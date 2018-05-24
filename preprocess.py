@@ -27,10 +27,6 @@ def preprocess(basedir):
 
     for idx in tqdm(range(len(annotation_files))):
         fileName = annotation_files[idx]
-        # if fileName.find('7_472')!= -1: # feili
-        #     pass
-        # else:
-        #     continue
 
         df_doc, df_entity, df_relation = processOneFile(fileName, annotation_dir, corpus_dir)
         fileName = fileName[0:fileName.find('.')]
@@ -71,10 +67,6 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
         start = entity.locations[0].offset
         end = entity.locations[0].end
 
-        # if entity.id == "50151" : # feili
-        #     pass
-        # else:
-        #     continue
 
         tmp_df = pd.DataFrame(entity_span_in_this_passage, columns = ['start','end'])
         result_df = tmp_df[((tmp_df['start']<=start)&(tmp_df['end']>start)) | ((tmp_df['start']<end)&(tmp_df['end']>=end))]

@@ -151,115 +151,10 @@ def relationConstraint1(relation_type, type1, type2):
         raise RuntimeError("entity and relation types are not consistent")
 
 
-# enumerate all entity pairs
-def getRelationInstance1(tokens, entities, relations, names, word_vocab, relation_vocab, position_vocab1, position_vocab2):
-    X = []
-    Y = []
-    other = [] # other is used for outputing results, it's usually used for test set
-    cnt_neg = 0
-
-    for i in tqdm(range(len(relations))):
-
-        doc_relation = relations[i]
-        doc_token = tokens[i]
-        doc_entity = entities[i] # entity are sorted by start offset
-        doc_name = names[i]
-
-        row_num = doc_entity.shape[0]
-
-        for latter_idx in range(row_num):
-
-            for former_idx in range(row_num):
-
-                if former_idx < latter_idx:
-
-                    former = doc_entity.iloc[former_idx]
-                    latter = doc_entity.iloc[latter_idx]
-                    # if former['id']=='108237':
-                    #     pass
-
-                    if math.fabs(latter['sent_idx']-former['sent_idx']) >= opt.sent_window:
-                        continue
-
-                    type_constraint = relationConstraint(former['type'], latter['type'])
-                    if type_constraint == 0:
-                        continue
-
-                    gold_relations = doc_relation[
-                        (
-                                ((doc_relation['entity1_id'] == former['id']) & (
-                                            doc_relation['entity2_id'] == latter['id']))
-                                |
-                                ((doc_relation['entity1_id'] == latter['id']) & (
-                                            doc_relation['entity2_id'] == former['id']))
-                        )
-                    ]
-                    if gold_relations.shape[0] > 1:
-                        raise RuntimeError("the same entity pair has more than one relations")
-
-
-
-                    context_token = doc_token[
-                        (doc_token['sent_idx'] >= former['sent_idx']) & (doc_token['sent_idx'] <= latter['sent_idx'])]
-                    words = []
-                    positions1 = []
-                    positions2 = []
-                    i = 0
-                    former_head = -1
-                    latter_head = -1
-                    for _, token in context_token.iterrows():
-                        if token['start'] >= former['start'] and token['end'] <= former['end']:
-                            if former_head < i:
-                                former_head = i
-                        if token['start'] >= latter['start'] and token['end'] <= latter['end']:
-                            if latter_head < i:
-                                latter_head = i
-
-                        i += 1
-
-                    if former_head == -1:  # due to tokenization error, e.g., 10_197, hyper-CVAD-based vs hyper-CVAD
-                        logging.debug('former_head not found, entity {} {} {}'.format(former['id'], former['start'],
-                                                                                      former['text']))
-                        continue
-                    if latter_head == -1:
-                        logging.debug('latter_head not found, entity {} {} {}'.format(latter['id'], latter['start'],
-                                                                                      latter['text']))
-                        continue
-
-
-                    i = 0
-                    for _, token in context_token.iterrows():
-                        word = normalizeWord(token['text'])
-                        words.append(word_vocab.lookup(word))
-
-                        positions1.append(position_vocab1.lookup(former_head - i))
-                        positions2.append(position_vocab2.lookup(latter_head - i))
-
-                        i += 1
-
-                    X.append({'tokens': words, 'positions1': positions1, 'positions2': positions2})
-                    if gold_relations.shape[0] == 0:
-                        Y.append(relation_vocab.lookup('<unk>'))
-                        cnt_neg += 1
-                    else:
-                        Y.append(relation_vocab.lookup(gold_relations.iloc[0]['type']))
-
-                    other_info = {}
-                    other_info['doc_name'] = doc_name
-                    other_info['former_id'] = former['id']
-                    other_info['latter_id'] = latter['id']
-                    other.append(other_info)
-
-
-
-
-    neg = 100.0*cnt_neg/len(Y)
-
-    logging.info("positive instance {}%, negative instance {}%".format(100-neg, neg))
-    return X, Y, other
 
 # truncate before feature
-def getRelationInstance2(tokens, entities, relations, names, word_vocab, relation_vocab, entity_type_vocab, entity_vocab, position_vocab1, position_vocab2):
+def getRelationInstance2(tokens, entities, relations, names, word_vocab, relation_vocab, entity_type_vocab, entity_vocab,
+                         position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab):
     X = []
     Y = []
     other = [] # other is used for outputing results, it's usually used for test set
@@ -282,8 +177,7 @@ def getRelationInstance2(tokens, entities, relations, names, word_vocab, relatio
 
                     former = doc_entity.iloc[former_idx]
                     latter = doc_entity.iloc[latter_idx]
-                    # if former['id']=='108237':
-                    #     pass
+
 
                     if math.fabs(latter['sent_idx']-former['sent_idx']) >= opt.sent_window:
                         continue
@@ -388,152 +282,10 @@ def getRelationInstance2(tokens, entities, relations, names, word_vocab, relatio
                         features['e1_token'] = latter_token
                         features['e2_token'] = former_token
 
-                    X.append(features)
+                    features['tok_num_betw'] = tok_num_betw_vocab.lookup(latter['tf_start']-former['tf_end'])
 
-                    if gold_relations.shape[0] == 0:
-                        Y.append(relation_vocab.lookup('<unk>'))
-                        cnt_neg += 1
-                    else:
-                        Y.append(relation_vocab.lookup(gold_relations.iloc[0]['type']))
-
-                    other_info = {}
-                    other_info['doc_name'] = doc_name
-                    other_info['former_id'] = former['id']
-                    other_info['latter_id'] = latter['id']
-                    other.append(other_info)
-
-
-
-
-    neg = 100.0*cnt_neg/len(Y)
-
-    logging.info("positive instance {}%, negative instance {}%".format(100-neg, neg))
-    return X, Y, other
-
-# truncate after feature
-def getRelationInstance3(tokens, entities, relations, names, word_vocab, relation_vocab, entity_type_vocab, entity_vocab, position_vocab1, position_vocab2):
-    X = []
-    Y = []
-    other = [] # other is used for outputing results, it's usually used for test set
-    cnt_neg = 0
-
-    for i in tqdm(range(len(relations))):
-
-        doc_relation = relations[i]
-        doc_token = tokens[i]
-        doc_entity = entities[i] # entity are sorted by start offset
-        doc_name = names[i]
-        # if i==776:# feili
-        #     pass
-        # else:
-        #     continue
-
-        row_num = doc_entity.shape[0]
-
-        for latter_idx in range(row_num):
-
-            for former_idx in range(row_num):
-
-                if former_idx < latter_idx:
-
-                    former = doc_entity.iloc[former_idx]
-                    latter = doc_entity.iloc[latter_idx]
-
-                    if math.fabs(latter['sent_idx']-former['sent_idx']) >= opt.sent_window:
-                        continue
-
-                    type_constraint = relationConstraint(former['type'], latter['type'])
-                    if type_constraint == 0:
-                        continue
-
-                    gold_relations = doc_relation[
-                        (
-                                ((doc_relation['entity1_id'] == former['id']) & (
-                                            doc_relation['entity2_id'] == latter['id']))
-                                |
-                                ((doc_relation['entity1_id'] == latter['id']) & (
-                                            doc_relation['entity2_id'] == former['id']))
-                        )
-                    ]
-                    if gold_relations.shape[0] > 1:
-                        raise RuntimeError("the same entity pair has more than one relations")
-
-                    # here we retrieve all the sentences inbetween two entities, sentence of former, sentence ..., sentence of latter
-                    sent_idx = former['sent_idx']
-                    context_token = pd.DataFrame(columns=doc_token.columns)
-                    base = 0
-                    former_tf_start, former_tf_end = -1, -1
-                    latter_tf_start, latter_tf_end = -1, -1
-                    while sent_idx <= latter['sent_idx']:
-                        sentence = doc_token[(doc_token['sent_idx'] == sent_idx)]
-
-                        if former['sent_idx'] == sent_idx:
-                            former_tf_start, former_tf_end = base+former['tf_start'], base+former['tf_end']
-                        if latter['sent_idx'] == sent_idx:
-                            latter_tf_start, latter_tf_end = base+latter['tf_start'], base+latter['tf_end']
-
-                        context_token = context_token.append(sentence, ignore_index=True)
-
-                        base += len(sentence['text'])
-                        sent_idx += 1
-
-
-                    words = []
-                    positions1 = []
-                    positions2 = []
-                    former_token = []
-                    latter_token = []
-                    i = 0
-                    for _, token in context_token.iterrows():
-                        word = normalizeWord(token['text'])
-                        words.append(word_vocab.lookup(word))
-
-                        if i < former_tf_start:
-                            positions1.append(position_vocab1.lookup(former_tf_start - i))
-                        elif i > former_tf_end:
-                            positions1.append(position_vocab1.lookup(former_tf_end - i))
-                        else:
-                            positions1.append(position_vocab1.lookup(0))
-                            former_token.append(entity_vocab.lookup(word))
-
-                        if i < latter_tf_start:
-                            positions2.append(position_vocab2.lookup(latter_tf_start - i))
-                        elif i > latter_tf_end:
-                            positions2.append(position_vocab2.lookup(latter_tf_end - i))
-                        else:
-                            positions2.append(position_vocab2.lookup(0))
-                            latter_token.append(entity_vocab.lookup(word))
-
-                        i += 1
-
-
-                    assert len(former_token)>0
-                    # if len(former_token)<=0: # feili
-                    #     pass
-                    assert len(latter_token)>0
-                    # if len(latter_token)<=0:
-                    #     pass
-
-
-                    if len(words) > opt.max_seq_len:
-                        # truncate
-                        logging.debug("exceed max_seq_len {} {}".format(doc_name, len(words)))
-                        words = words[:opt.max_seq_len]
-                        positions1 = positions1[:opt.max_seq_len]
-                        positions2 = positions2[:opt.max_seq_len]
-
-
-                    features = {'tokens': words, 'positions1': positions1, 'positions2': positions2}
-                    if type_constraint == 1:
-                        features['e1_type'] = entity_type_vocab.lookup(former['type'])
-                        features['e2_type'] = entity_type_vocab.lookup(latter['type'])
-                        features['e1_token'] = former_token
-                        features['e2_token'] = latter_token
-                    else:
-                        features['e1_type'] = entity_type_vocab.lookup(latter['type'])
-                        features['e2_type'] = entity_type_vocab.lookup(former['type'])
-                        features['e1_token'] = latter_token
-                        features['e2_token'] = former_token
+                    entity_between = doc_entity[((doc_entity['start']>=former['end']) & (doc_entity['end']<=latter['start']))]
+                    features['et_num'] = et_num_vocab.lookup(entity_between.shape[0])
 
                     X.append(features)
 
@@ -556,70 +308,6 @@ def getRelationInstance3(tokens, entities, relations, names, word_vocab, relatio
 
     logging.info("positive instance {}%, negative instance {}%".format(100-neg, neg))
     return X, Y, other
-
-
-def getRelatonInstance(tokens, entities, relations, word_vocab, relation_vocab, position_vocab1, position_vocab2):
-
-    X = []
-    Y = []
-
-    for i in tqdm(range(len(relations))):
-
-        doc_relation = relations[i]
-        doc_token = tokens[i]
-        doc_entity = entities[i]
-
-        for index, relation in doc_relation.iterrows():
-
-            # find entity mention
-            entity1 = doc_entity[(doc_entity['id']==relation['entity1_id'])].iloc[0]
-            entity2 = doc_entity[(doc_entity['id'] == relation['entity2_id'])].iloc[0]
-            # find all sentences between entity1 and entity2
-            former = entity1 if entity1['start']<entity2['start'] else entity2
-            latter = entity2 if entity1['start']<entity2['start'] else entity1
-            context_token = doc_token[(doc_token['sent_idx'] >= former['sent_idx']) & (doc_token['sent_idx'] <= latter['sent_idx'])]
-            words = []
-            positions1 = []
-            positions2 = []
-            i = 0
-            former_head = -1
-            latter_head = -1
-            for _, token in context_token.iterrows():
-                if token['start'] >= former['start'] and token['end'] <= former['end']:
-                    if former_head < i:
-                        former_head = i
-                if token['start'] >= latter['start'] and token['end'] <= latter['end']:
-                    if latter_head < i:
-                        latter_head = i
-
-                i += 1
-
-            if former_head == -1: # due to tokenization error, e.g., 10_197, hyper-CVAD-based vs hyper-CVAD
-                logging.debug('former_head not found, entity {} {} {}'.format(former['id'], former['start'], former['text']))
-                continue
-            if latter_head == -1:
-                logging.debug('latter_head not found, entity {} {} {}'.format(latter['id'], latter['start'], latter['text']))
-                continue
-
-
-            i = 0
-            for _, token in context_token.iterrows():
-
-                word = normalizeWord(token['text'])
-                words.append(word_vocab.lookup(word))
-
-                positions1.append(position_vocab1.lookup(former_head-i))
-                positions2.append(position_vocab2.lookup(latter_head-i))
-
-                i += 1
-
-
-            X.append({'tokens': words, 'positions1': positions1, 'positions2':positions2})
-            Y.append(relation_vocab.lookup(relation['type']))
-
-
-    return X, Y
-
 
 
 
@@ -640,39 +328,6 @@ class RelationDataset(Dataset):
         return (self.X[idx], self.Y[idx])
 
 
-
-# def my_collate(batch):
-#     x, y = zip(*batch)
-#     # extract input indices
-#     tokens = [s['tokens'] for s in x]
-#     positions1 = [s['positions1'] for s in x]
-#     positions2 = [s['positions2'] for s in x]
-#
-#     lengths = [len(row) for row in tokens]
-#     max_len = max(lengths)
-#
-#     tokens = pad_sequence(tokens, max_len, opt.pad_idx)
-#     positions1 = pad_sequence(positions1, max_len, opt.pad_idx)
-#     positions2 = pad_sequence(positions2, max_len, opt.pad_idx)
-#     y = torch.LongTensor(y).view(-1)
-#     if torch.cuda.is_available():
-#         y = y.cuda()
-#     return (tokens, positions1, positions2, y)
-#
-#
-# def pad_sequence(x, max_len, pad_idx):
-#     # pad to meet the need of PrimaryCapsule
-#     max_len = max(max_len, 5)
-#
-#     padded_x = np.zeros((len(x), max_len), dtype=np.int)
-#     padded_x.fill(pad_idx)
-#     for i, row in enumerate(x):
-#         assert pad_idx not in row, 'EOS in sequence {}'.format(row)
-#         padded_x[i][:len(row)] = row
-#     padded_x = torch.LongTensor(padded_x)
-#     if torch.cuda.is_available():
-#         padded_x = padded_x.cuda()
-#     return padded_x
 
 def sorted_collate(batch):
     return my_collate(batch, sort=True)
@@ -704,6 +359,8 @@ def pad(x, y, eos_idx, sort):
     e2_type = [s['e2_type'] for s in x]
     e1_token = [s['e1_token'] for s in x]
     e2_token = [s['e2_token'] for s in x]
+    tok_num_betw = [s['tok_num_betw'] for s in x]
+    et_num = [s['et_num'] for s in x]
 
     lengths = [len(row) for row in tokens]
     max_len = max(lengths)
@@ -731,6 +388,10 @@ def pad(x, y, eos_idx, sort):
     e1_type = torch.LongTensor(e1_type)
     e2_type = torch.LongTensor(e2_type)
 
+    tok_num_betw = torch.LongTensor(tok_num_betw)
+
+    et_num = torch.LongTensor(et_num)
+
     y = torch.LongTensor(y).view(-1)
 
     if sort:
@@ -749,11 +410,17 @@ def pad(x, y, eos_idx, sort):
         e1_type = e1_type.index_select(0, sort_idx)
         e2_type = e2_type.index_select(0, sort_idx)
 
+        tok_num_betw = tok_num_betw.index_select(0, sort_idx)
+
+        et_num = et_num.index_select(0, sort_idx)
+
         y = y.index_select(0, sort_idx)
 
-        return [tokens, positions1, positions2, e1_token, e2_token], [e1_length, e2_length, e1_type, e2_type, sort_len], y
+        return [tokens, positions1, positions2, e1_token, e2_token], \
+               [e1_length, e2_length, e1_type, e2_type, tok_num_betw, et_num, sort_len], y
     else:
-        return [tokens, positions1, positions2, e1_token, e2_token], [e1_length, e2_length, e1_type, e2_type, lengths], y
+        return [tokens, positions1, positions2, e1_token, e2_token], \
+               [e1_length, e2_length, e1_type, e2_type, tok_num_betw, et_num, lengths], y
 
 
 def pad_sequence(x, max_len, eos_idx):

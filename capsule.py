@@ -175,20 +175,20 @@ class CapsuleNet(nn.Module):
         # x = squash(x)
 
         # 2
-        # hidden_features = hidden_features.view(-1, 16, 4, 4)
-        # hidden_features = self.primarycaps(hidden_features)
-        # e1_t = e1_t.view(bz, -1, self.primary_cap_dim)
-        # e2_t = e2_t.view(bz, -1, self.primary_cap_dim)
-        # e1 = e1.view(bz, -1, self.primary_cap_dim)
-        # e2 = e2.view(bz, -1, self.primary_cap_dim)
-        # x = torch.cat((e1_t, e2_t, e1, e2), dim=1)
-        # x = squash(x)
-        # x = torch.cat((hidden_features, x), dim=1)
+        hidden_features = hidden_features.view(-1, 16, 4, 4)
+        hidden_features = self.primarycaps(hidden_features)
+        e1_t = e1_t.view(bz, -1, self.primary_cap_dim)
+        e2_t = e2_t.view(bz, -1, self.primary_cap_dim)
+        e1 = e1.view(bz, -1, self.primary_cap_dim)
+        e2 = e2.view(bz, -1, self.primary_cap_dim)
+        x = torch.cat((e1_t, e2_t, e1, e2), dim=1)
+        x = squash(x)
+        x = torch.cat((hidden_features, x), dim=1)
 
         # 3
-        x = torch.cat((hidden_features, e1_t, e2_t, e1, e2), dim=1)
-        x = x.view(bz, 16, 3, 6)
-        x = self.primarycaps(x)
+        # x = torch.cat((hidden_features, e1_t, e2_t, e1, e2), dim=1)
+        # x = x.view(bz, 16, 3, 6)
+        # x = self.primarycaps(x)
 
 
         x = self.digitcaps(x)

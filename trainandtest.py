@@ -55,286 +55,7 @@ def dataset_stat(tokens, entities, relations):
 
 
 
-# used when not enumerate all entities
-def test(test_token, test_entity, test_relation, test_name, result_dumpdir):
-    logging.info("loading ... vocab")
-    word_vocab = pickle.load(open(os.path.join(opt.pretrain, 'word_vocab.pkl'), 'rb'))
-    relation_vocab = pickle.load(open(os.path.join(opt.pretrain, 'relation_vocab.pkl'), 'rb'))
-    position_vocab1 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab1.pkl'), 'rb'))
-    position_vocab2 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab2.pkl'), 'rb'))
 
-    logging.info("loading ... model")
-    if opt.model.lower() == 'lstm':
-        feature_extractor = LSTMFeatureExtractor(word_vocab, position_vocab1, position_vocab2,
-                                                 opt.F_layers, opt.shared_hidden_size, opt.dropout)
-    elif opt.model.lower() == 'cnn':
-        feature_extractor = CNNFeatureExtractor(word_vocab, position_vocab1, position_vocab2,
-                                                opt.F_layers, opt.shared_hidden_size,
-                                  opt.kernel_num, opt.kernel_sizes, opt.dropout)
-    else:
-        raise RuntimeError('Unknown feature extractor {}'.format(opt.model))
-    if torch.cuda.is_available():
-        feature_extractor = feature_extractor.cuda(opt.gpu)
-
-    if opt.model_high == 'capsule':
-        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab)
-    elif opt.model_high == 'capsule_em':
-        m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
-    elif opt.model_high == 'mlp':
-        m = baseline.MLP(opt.shared_hidden_size, relation_vocab)
-    else:
-        raise RuntimeError('Unknown model {}'.format(opt.model_high))
-    if torch.cuda.is_available():
-        m = m.cuda(opt.gpu)
-
-    feature_extractor.load_state_dict(torch.load(os.path.join(opt.output, 'feature_extractor.pth')))
-    m.load_state_dict(torch.load(os.path.join(opt.output, 'model.pth')))
-    m.eval()
-
-    my_collate = utils.sorted_collate if opt.model == 'lstm' else utils.unsorted_collate
-
-    with torch.no_grad():
-
-        for i in tqdm(range(len(test_relation))): # this procedure should keep consistent with utils.getRelatonInstance
-
-            doc_relation = test_relation[i]
-            doc_token = test_token[i]
-            doc_entity = test_entity[i]
-            doc_name = test_name[i]
-
-            collection = bioc.BioCCollection()
-            document = bioc.BioCDocument()
-            collection.add_document(document)
-            document.id = doc_name
-            passage = bioc.BioCPassage()
-            document.add_passage(passage)
-            passage.offset = 0
-            
-            for _, entity in doc_entity.iterrows():
-                anno_entity = bioc.BioCAnnotation()
-                passage.add_annotation(anno_entity)
-                anno_entity.id = entity['id']
-                anno_entity.infons['type'] = entity['type']
-                anno_entity_location = bioc.BioCLocation(entity['start'], entity['end']-entity['start'])
-                anno_entity.add_location(anno_entity_location)
-                anno_entity.text = entity['text']
-
-            for _, relation in doc_relation.iterrows():
-
-                # find entity mention
-                entity1 = doc_entity[(doc_entity['id']==relation['entity1_id'])].iloc[0]
-                entity2 = doc_entity[(doc_entity['id'] == relation['entity2_id'])].iloc[0]
-                # find all sentences between entity1 and entity2
-                former = entity1 if entity1['start']<entity2['start'] else entity2
-                latter = entity2 if entity1['start']<entity2['start'] else entity1
-                context_token = doc_token[(doc_token['sent_idx'] >= former['sent_idx']) & (doc_token['sent_idx'] <= latter['sent_idx'])]
-                words = []
-                positions1 = []
-                positions2 = []
-                i = 0
-                former_head = -1
-                latter_head = -1
-                for _, token in context_token.iterrows():
-                    if token['start'] >= former['start'] and token['end'] <= former['end']:
-                        if former_head < i:
-                            former_head = i
-                    if token['start'] >= latter['start'] and token['end'] <= latter['end']:
-                        if latter_head < i:
-                            latter_head = i
-
-                    i += 1
-
-                if former_head == -1: # due to tokenization error, e.g., 10_197, hyper-CVAD-based vs hyper-CVAD
-                    logging.debug('former_head not found, entity {} {} {}'.format(former['id'], former['start'], former['text']))
-                    continue
-                if latter_head == -1:
-                    logging.debug('latter_head not found, entity {} {} {}'.format(latter['id'], latter['start'], latter['text']))
-                    continue
-
-
-                i = 0
-                for _, token in context_token.iterrows():
-
-                    word = utils.normalizeWord(token['text'])
-                    words.append(word_vocab.lookup(word))
-
-                    positions1.append(position_vocab1.lookup(former_head-i))
-                    positions2.append(position_vocab2.lookup(latter_head-i))
-
-                    i += 1
-
-
-                # here we ignore utils.RelationDataset(test_X, test_Y, opt.max_seq_len)
-                # [({'tokens': [171, 35, 371, 304, 6, 243, 389, 106, 2],
-                #    'positions2': [107, 106, 105, 104, 103, 102, 101, 100, 99],
-                #    'positions1': [105, 104, 103, 102, 101, 100, 99, 98, 97]}, 3), []]
-
-                batch = [({'tokens': words, 'positions1': positions1, 'positions2': positions2},-1)]
-                tokens, positions1, positions2, lengths, y = my_collate(batch)
-
-                hidden_features = feature_extractor.forward(tokens, positions1, positions2, lengths)
-                outputs = m.forward(hidden_features)
-                _, pred = torch.max(outputs, 1)
-
-                bioc_relation = bioc.BioCRelation()
-                passage.add_relation(bioc_relation)
-                bioc_relation.id = relation['id']
-                bioc_relation.infons['type'] = relation_vocab.lookup_id2str(pred.item())
-
-                node1 = bioc.BioCNode(former['id'], 'annotation 1')
-                bioc_relation.add_node(node1)
-                node2 = bioc.BioCNode(latter['id'], 'annotation 2')
-                bioc_relation.add_node(node2)
-
-
-            with open(os.path.join(result_dumpdir, doc_name+".bioc.xml"), 'w') as fp:
-                bioc.dump(collection, fp)
-
-# used when enumerate all entities
-def test1(test_token, test_entity, test_relation, test_name, result_dumpdir):
-    logging.info("loading ... vocab")
-    word_vocab = pickle.load(open(os.path.join(opt.pretrain, 'word_vocab.pkl'), 'rb'))
-    relation_vocab = pickle.load(open(os.path.join(opt.pretrain, 'relation_vocab.pkl'), 'rb'))
-    position_vocab1 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab1.pkl'), 'rb'))
-    position_vocab2 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab2.pkl'), 'rb'))
-
-    logging.info("loading ... model")
-    if opt.model.lower() == 'lstm':
-        feature_extractor = LSTMFeatureExtractor(word_vocab, position_vocab1, position_vocab2,
-                                                 opt.F_layers, opt.shared_hidden_size, opt.dropout)
-    elif opt.model.lower() == 'cnn':
-        feature_extractor = CNNFeatureExtractor(word_vocab, position_vocab1, position_vocab2,
-                                                opt.F_layers, opt.shared_hidden_size,
-                                  opt.kernel_num, opt.kernel_sizes, opt.dropout)
-    else:
-        raise RuntimeError('Unknown feature extractor {}'.format(opt.model))
-    if torch.cuda.is_available():
-        feature_extractor = feature_extractor.cuda(opt.gpu)
-
-    if opt.model_high == 'capsule':
-        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab)
-    elif opt.model_high == 'capsule_em':
-        m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
-    elif opt.model_high == 'mlp':
-        m = baseline.MLP(opt.shared_hidden_size, relation_vocab)
-    else:
-        raise RuntimeError('Unknown model {}'.format(opt.model_high))
-    if torch.cuda.is_available():
-        m = m.cuda(opt.gpu)
-
-    feature_extractor.load_state_dict(torch.load(os.path.join(opt.output, 'feature_extractor.pth')))
-    m.load_state_dict(torch.load(os.path.join(opt.output, 'model.pth')))
-    m.eval()
-
-    my_collate = utils.sorted_collate if opt.model == 'lstm' else utils.unsorted_collate
-
-    for i in tqdm(range(len(test_relation))):  # this procedure should keep consistent with utils.getRelationInstance1
-
-        doc_relation = test_relation[i]
-        doc_token = test_token[i]
-        doc_entity = test_entity[i]
-        doc_name = test_name[i]
-
-        collection = bioc.BioCCollection()
-        document = bioc.BioCDocument()
-        collection.add_document(document)
-        document.id = doc_name
-        passage = bioc.BioCPassage()
-        document.add_passage(passage)
-        passage.offset = 0
-
-        for _, entity in doc_entity.iterrows():
-            anno_entity = bioc.BioCAnnotation()
-            passage.add_annotation(anno_entity)
-            anno_entity.id = entity['id']
-            anno_entity.infons['type'] = entity['type']
-            anno_entity_location = bioc.BioCLocation(entity['start'], entity['end'] - entity['start'])
-            anno_entity.add_location(anno_entity_location)
-            anno_entity.text = entity['text']
-
-        row_num = doc_entity.shape[0]
-        relation_id = 1
-        for latter_idx in range(row_num):
-
-            for former_idx in range(row_num):
-
-                if former_idx < latter_idx:
-
-                    former = doc_entity.iloc[former_idx]
-                    latter = doc_entity.iloc[latter_idx]
-
-                    if math.fabs(latter['sent_idx']-former['sent_idx']) >= opt.sent_window:
-                        continue
-
-                    type_constraint = utils.relationConstraint(former['type'], latter['type'])
-                    if type_constraint == 0:
-                        continue
-
-                    context_token = doc_token[(doc_token['sent_idx'] >= former['sent_idx']) & (
-                                doc_token['sent_idx'] <= latter['sent_idx'])]
-                    words = []
-                    positions1 = []
-                    positions2 = []
-                    i = 0
-                    former_head = -1
-                    latter_head = -1
-                    for _, token in context_token.iterrows():
-                        if token['start'] >= former['start'] and token['end'] <= former['end']:
-                            if former_head < i:
-                                former_head = i
-                        if token['start'] >= latter['start'] and token['end'] <= latter['end']:
-                            if latter_head < i:
-                                latter_head = i
-
-                        i += 1
-
-                    if former_head == -1:  # due to tokenization error, e.g., 10_197, hyper-CVAD-based vs hyper-CVAD
-                        logging.debug('former_head not found, entity {} {} {}'.format(former['id'], former['start'],
-                                                                                      former['text']))
-                        continue
-                    if latter_head == -1:
-                        logging.debug('latter_head not found, entity {} {} {}'.format(latter['id'], latter['start'],
-                                                                                      latter['text']))
-                        continue
-
-                    i = 0
-                    for _, token in context_token.iterrows():
-                        word = utils.normalizeWord(token['text'])
-                        words.append(word_vocab.lookup(word))
-
-                        positions1.append(position_vocab1.lookup(former_head - i))
-                        positions2.append(position_vocab2.lookup(latter_head - i))
-
-                        i += 1
-
-
-                    batch = [({'tokens': words, 'positions1': positions1, 'positions2': positions2}, -1)]
-                    with torch.no_grad():
-                        tokens, positions1, positions2, lengths, y = my_collate(batch)
-
-                        hidden_features = feature_extractor.forward(tokens, positions1, positions2, lengths)
-                        outputs = m.forward(hidden_features)
-                        _, pred = torch.max(outputs, 1)
-
-                    relation_type = relation_vocab.lookup_id2str(pred.item())
-                    if relation_type == '<unk>':
-                        continue
-                    elif utils.relationConstraint1(relation_type, former['type'], latter['type']) == False:
-                        continue
-                    else:
-                        bioc_relation = bioc.BioCRelation()
-                        passage.add_relation(bioc_relation)
-                        bioc_relation.id = str(relation_id)
-                        relation_id += 1
-                        bioc_relation.infons['type'] = relation_type
-
-                        node1 = bioc.BioCNode(former['id'], 'annotation 1')
-                        bioc_relation.add_node(node1)
-                        node2 = bioc.BioCNode(latter['id'], 'annotation 2')
-                        bioc_relation.add_node(node2)
-
-        with open(os.path.join(result_dumpdir, doc_name + ".bioc.xml"), 'w') as fp:
-            bioc.dump(collection, fp)
 
 # used when entities have been enumerated, just translate into bioc format
 def test2(test_token, test_entity, test_relation, test_name, result_dumpdir):
@@ -344,7 +65,7 @@ def test2(test_token, test_entity, test_relation, test_name, result_dumpdir):
     logging.info("loading ... result")
     results = pickle.load(open(os.path.join(opt.output, 'results.pkl'), "rb"))
 
-    for i in tqdm(range(len(test_relation))):  # this procedure should keep consistent with utils.getRelationInstance1
+    for i in tqdm(range(len(test_relation))):
 
         doc_entity = test_entity[i]
         doc_name = test_name[i]
@@ -417,6 +138,9 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     entity_vocab = vocab.Vocab(entity_alphabet, None, opt.entity_emb_size)
     position_vocab1 = vocab.Vocab(position_alphabet, None, opt.position_emb_size)
     position_vocab2 = vocab.Vocab(position_alphabet, None, opt.position_emb_size)
+    # we directly use position_alphabet to build them, since they are all numbers
+    tok_num_betw_vocab = vocab.Vocab(position_alphabet, None, opt.entity_type_emb_size)
+    et_num_vocab = vocab.Vocab(position_alphabet, None, opt.entity_type_emb_size)
     logging.info("vocab build completed")
 
     logging.info("saving ... vocab")
@@ -426,25 +150,18 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     pickle.dump(entity_vocab, open(os.path.join(opt.pretrain, 'entity_vocab.pkl'), "wb"), True)
     pickle.dump(position_vocab1, open(os.path.join(opt.pretrain, 'position_vocab1.pkl'), "wb"), True)
     pickle.dump(position_vocab2, open(os.path.join(opt.pretrain, 'position_vocab2.pkl'), "wb"), True)
+    pickle.dump(tok_num_betw_vocab, open(os.path.join(opt.pretrain, 'tok_num_betw_vocab.pkl'), "wb"), True)
+    pickle.dump(et_num_vocab, open(os.path.join(opt.pretrain, 'et_num_vocab.pkl'), "wb"), True)
 
-    # word_vocab = pickle.load(open(os.path.join(opt.pretrain, 'word_vocab.pkl'), 'rb'))
-    # relation_vocab = pickle.load(open(os.path.join(opt.pretrain, 'relation_vocab.pkl'), 'rb'))
-    # position_vocab1 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab1.pkl'), 'rb'))
-    # position_vocab2 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab2.pkl'), 'rb'))
-
-    # One relation instance is composed of X (a pair of entities and their context), Y (relation label).
-    # train_X, train_Y = utils.getRelatonInstance(train_token, train_entity, train_relation, word_vocab, relation_vocab, position_vocab1,
-    #                                             position_vocab2)
     train_X, train_Y, _ = utils.getRelationInstance2(train_token, train_entity, train_relation, train_name, word_vocab, relation_vocab, entity_type_vocab,
-                                                     entity_vocab, position_vocab1, position_vocab2)
+                                                     entity_vocab, position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab)
     logging.info("training instance build completed, total {}".format(len(train_Y)))
     pickle.dump(train_X, open(os.path.join(opt.pretrain, 'train_X.pkl'), "wb"), True)
     pickle.dump(train_Y, open(os.path.join(opt.pretrain, 'train_Y.pkl'), "wb"), True)
 
-    # test_X, test_Y = utils.getRelatonInstance(test_token, test_entity, test_relation, word_vocab, relation_vocab, position_vocab1,
-    #                                           position_vocab2)
+
     test_X, test_Y, test_other = utils.getRelationInstance2(test_token, test_entity, test_relation, test_name, word_vocab, relation_vocab, entity_type_vocab,
-                                                            entity_vocab, position_vocab1, position_vocab2)
+                                                            entity_vocab, position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab)
     logging.info("test instance build completed, total {}".format(len(test_Y)))
     pickle.dump(test_X, open(os.path.join(opt.pretrain, 'test_X.pkl'), "wb"), True)
     pickle.dump(test_Y, open(os.path.join(opt.pretrain, 'test_Y.pkl'), "wb"), True)
@@ -538,6 +255,8 @@ def train():
     entity_vocab = pickle.load(open(os.path.join(opt.pretrain, 'entity_vocab.pkl'), 'rb'))
     position_vocab1 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab1.pkl'), 'rb'))
     position_vocab2 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab2.pkl'), 'rb'))
+    tok_num_betw_vocab = pickle.load(open(os.path.join(opt.pretrain, 'tok_num_betw_vocab.pkl'), 'rb'))
+    et_num_vocab = pickle.load(open(os.path.join(opt.pretrain, 'et_num_vocab.pkl'), 'rb'))
 
     # One relation instance is composed of X (a pair of entities and their context), Y (relation label).
     train_X = pickle.load(open(os.path.join(opt.pretrain, 'train_X.pkl'), 'rb'))
@@ -595,7 +314,11 @@ def train():
     elif opt.model_high == 'capsule_em':
         m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
     elif opt.model_high == 'mlp':
-        m = baseline.MLP(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab)
+        m = baseline.MLP(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab, tok_num_betw_vocab,
+                                         et_num_vocab)
+        # m = baseline.SentimentClassifier(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab, tok_num_betw_vocab,
+        #                                  et_num_vocab,
+        #                                  opt.F_layers, opt.shared_hidden_size, opt.dropout, opt.model_high_bn)
     else:
         raise RuntimeError('Unknown model {}'.format(opt.model_high))
     if torch.cuda.is_available():

@@ -106,8 +106,8 @@ class LSTMFeatureExtractor(nn.Module):
         self.attn = DotAttentionLayer(hidden_size)
 
     def forward(self, x2, x1):
-        tokens, positions1, positions2, e1_token, e2_token = x2
-        e1_length, e2_length, e1_type, e2_type, lengths = x1
+        tokens, positions1, positions2, _, _ = x2
+        _, _, _, _, lengths = x1
 
         lengths_list = lengths.tolist()
         batch_size = tokens.size(0)
