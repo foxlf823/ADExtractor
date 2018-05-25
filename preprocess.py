@@ -4,8 +4,9 @@ from os.path import isfile, join
 import pandas as pd
 from tqdm import tqdm
 import bioc
-from nltk.tokenize.punkt import PunktSentenceTokenizer
+#from nltk.tokenize.punkt import PunktSentenceTokenizer
 import nltk
+sent_tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
 # nltk.download('punkt')
 import logging
 import os
@@ -36,6 +37,8 @@ def preprocess(basedir):
 
     logging.info("preprocessing complete in {}".format(basedir))
 
+
+
 def processOneFile(fileName, annotation_dir, corpus_dir):
     annotation_file = get_bioc_file(join(annotation_dir, fileName))
     corpus_file = get_text_file(join(corpus_dir, fileName.split('.bioc')[0]))
@@ -43,7 +46,8 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
 
     # token
     all_sents_inds = []
-    generator = PunktSentenceTokenizer().span_tokenize(corpus_file)
+    #generator = PunktSentenceTokenizer().span_tokenize(corpus_file)
+    generator = sent_tokenizer.span_tokenize(corpus_file)
     for t in generator:
         all_sents_inds.append(t)
 
@@ -52,7 +56,7 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
         t_start = all_sents_inds[ind][0]
         t_end = all_sents_inds[ind][1]
         tmp_tokens = token_from_sent(corpus_file[t_start:t_end], t_start)
-        df_tokens = pd.DataFrame(tmp_tokens, columns=['text', 'start', 'end'])
+        df_tokens = pd.DataFrame(tmp_tokens, columns=['text', 'postag', 'start', 'end'])
 
         df_sent_id = pd.DataFrame([ind]*len(tmp_tokens), columns = ['sent_idx'])
         df_comb = pd.concat([df_tokens, df_sent_id], axis=1)
@@ -61,19 +65,33 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
     df_doc.index = range(df_doc.shape[0])
 
     # entity
+    # entity_and_type = {}
     entity_span_in_this_passage = [] # to determine entity overlap
     anno_data = []
     for entity in bioc_passage.annotations:
         start = entity.locations[0].offset
         end = entity.locations[0].end
 
+        # entity_boudary = str(start + ' ' + end)
+        # if entity_boudary not in entity_and_type:
+        #     entity_and_type[entity_boudary] = entity.infons['type']
+        # else:
+        #     if (entity_and_type[entity_boudary] != entity.infons['type']):
+        #         logging.debug('file {}, entity {}, double annotation'.format(fileName, entity.id))
 
-        tmp_df = pd.DataFrame(entity_span_in_this_passage, columns = ['start','end'])
-        result_df = tmp_df[((tmp_df['start']<=start)&(tmp_df['end']>start)) | ((tmp_df['start']<end)&(tmp_df['end']>=end))]
+        tmp_df = pd.DataFrame(entity_span_in_this_passage, columns = ['start','end', 'type'])
+        #result_df = tmp_df[((tmp_df['start']<=start)&(tmp_df['end']>start)) | ((tmp_df['start']<end)&(tmp_df['end']>=end))]
+        result_df = tmp_df[
+            ((tmp_df['start'] <= start) & (tmp_df['end'] > start)) |
+            ((tmp_df['start'] < end) & (tmp_df['end'] >= end)) |
+            ((tmp_df['start'] >= start) & (tmp_df['end'] <= end)) |
+            ((tmp_df['start'] <= start) & (tmp_df['end'] >= end))
+        ]
+
         if result_df.shape[0]==0:
             sent_idx = entity_in_sentence(start, end, all_sents_inds)
             if sent_idx == -1:
-                logging.debug('cannot find entity {} in all sentences of {}'.format(entity.id, fileName))
+                logging.debug('file {}, entity {}, cannot find entity in all sentences'.format(fileName, entity.id))
                 continue
 
             df_sentence = df_doc[(df_doc['sent_idx'] == sent_idx)]
@@ -90,15 +108,52 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
                     tf_end = tf_idx
 
             if tf_start == -1 or tf_end == -1:  # due to tokenization error, e.g., 10_197, hyper-CVAD-based vs hyper-CVAD
-                logging.debug('not found tf_start or tf_end of entity {}'.format(entity.id))
+                logging.debug('file {}, entity {}, not found tf_start or tf_end'.format(fileName, entity.id))
                 continue
 
             anno_data.append([entity.id, start, end, entity.text, entity.infons['type'], sent_idx, tf_start, tf_end])
-            entity_span_in_this_passage.append([start, end])
+            entity_span_in_this_passage.append([start, end, entity.infons['type']])
         else: # some entities overlap with current entity
-            # raise RuntimeError('entity overlapped in {}'.format(fileName))
-            logging.debug('file {}, entity {}, overlapped'.format(fileName, entity.id))
-            continue
+            total_overlap = False
+            for _, overlap in result_df.iterrows():
+                if overlap['start'] == start and overlap['end'] == end:
+                    total_overlap = True
+                    break
+
+            if total_overlap:
+                logging.debug('file {}, entity {}, double annotation'.format(fileName, entity.id))
+
+                sent_idx = entity_in_sentence(start, end, all_sents_inds)
+                if sent_idx == -1:
+                    raise RuntimeError('file {}, entity {}, cannot find entity in all sentences'.format(fileName, entity.id))
+                    continue
+
+                df_sentence = df_doc[(df_doc['sent_idx'] == sent_idx)]
+                tf_start = -1
+                tf_end = -1
+                token_num = df_sentence.shape[0]
+
+                for tf_idx in range(token_num):
+                    token = df_sentence.iloc[tf_idx]
+
+                    if token['start'] == start:
+                        tf_start = tf_idx
+                    if token['end'] == end:
+                        tf_end = tf_idx
+
+                if tf_start == -1 or tf_end == -1:
+                    raise RuntimeError('file {}, entity {}, not found tf_start or tf_end'.format(fileName, entity.id))
+                    continue
+
+                anno_data.append(
+                    [entity.id, start, end, entity.text, entity.infons['type'], sent_idx, tf_start, tf_end])
+                entity_span_in_this_passage.append([start, end, entity.infons['type']])
+
+            else:
+                logging.debug('file {}, entity {}, overlapped'.format(fileName, entity.id))
+
+
+
 
     df_entity = pd.DataFrame(anno_data, columns = ['id','start','end','text','type', 'sent_idx', 'tf_start', 'tf_end']) # contains entity information
     df_entity = df_entity.sort_values('start')
@@ -141,8 +196,19 @@ def text_tokenize(txt, sent_start):
         yield token, offset+sent_start, offset+len(token)+sent_start
         offset += len(token)
 
+def text_tokenize_and_postagging(txt, sent_start):
+    tokens=utils.my_tokenize(txt)
+    pos_tags = nltk.pos_tag(tokens)
+
+    offset = 0
+    for token, pos_tag in pos_tags:
+        offset = txt.find(token, offset)
+        yield token, pos_tag, offset+sent_start, offset+len(token)+sent_start
+        offset += len(token)
+
 def token_from_sent(txt, sent_start):
-    return [token for token in text_tokenize(txt, sent_start)]
+    #return [token for token in text_tokenize(txt, sent_start)]
+    return [token for token in text_tokenize_and_postagging(txt, sent_start)]
 
 def entity_in_sentence(entity_start, entity_end, all_sents_inds):
     for i, (start, end) in enumerate(all_sents_inds):

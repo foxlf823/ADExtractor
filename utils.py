@@ -32,9 +32,32 @@ def normalizeWord(word, cased=False):
         newword = newword.lower()
     return newword
 
+# def my_tokenize(txt):
+#     tokens = nltk.word_tokenize(txt.replace('"', " "))  # replace due to nltk transfer " to other character, see https://github.com/nltk/nltk/issues/1630
+#     return tokens
+
+pattern = re.compile(r'[-_/]+')
+
+def my_split(s):
+    text = []
+    iter = re.finditer(pattern, s)
+    start = 0
+    for i in iter:
+        if start != i.start():
+            text.append(s[start: i.start()])
+        text.append(s[i.start(): i.end()])
+        start = i.end()
+    if start != len(s):
+        text.append(s[start: ])
+    return text
+
 def my_tokenize(txt):
-    tokens = nltk.word_tokenize(txt.replace('"', " "))  # replace due to nltk transfer " to other character, see https://github.com/nltk/nltk/issues/1630
-    return tokens
+    tokens1 = nltk.word_tokenize(txt.replace('"', " "))  # replace due to nltk transfer " to other character, see https://github.com/nltk/nltk/issues/1630
+    tokens2 = []
+    for token1 in tokens1:
+        token2 = my_split(token1)
+        tokens2.extend(token2)
+    return tokens2
 
 # relation constraints
 # 'do': set(['Drug Dose', 'Dose Dose']),
@@ -148,12 +171,14 @@ def relationConstraint1(relation_type, type1, type2):
         else:
             return False
     else:
-        raise RuntimeError("entity and relation types are not consistent")
+        raise RuntimeError("unknown relation type")
+
 
 
 
 # truncate before feature
-def getRelationInstance2(tokens, entities, relations, names, word_vocab, relation_vocab, entity_type_vocab, entity_vocab,
+def getRelationInstance2(tokens, entities, relations, names, word_vocab, postag_vocab,
+                         relation_vocab, entity_type_vocab, entity_vocab,
                          position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab):
     X = []
     Y = []
@@ -180,6 +205,10 @@ def getRelationInstance2(tokens, entities, relations, names, word_vocab, relatio
 
 
                     if math.fabs(latter['sent_idx']-former['sent_idx']) >= opt.sent_window:
+                        continue
+
+                    # for double annotation, we don't generate instances
+                    if former['start']==latter['start'] and former['end']==latter['end']:
                         continue
 
                     type_constraint = relationConstraint(former['type'], latter['type'])
@@ -224,6 +253,7 @@ def getRelationInstance2(tokens, entities, relations, names, word_vocab, relatio
 
 
                     words = []
+                    postags = []
                     positions1 = []
                     positions2 = []
                     former_token = []
@@ -232,6 +262,7 @@ def getRelationInstance2(tokens, entities, relations, names, word_vocab, relatio
                     for _, token in context_token.iterrows():
                         word = normalizeWord(token['text'])
                         words.append(word_vocab.lookup(word))
+                        postags.append(postag_vocab.lookup(token['postag']))
 
                         if i < former_tf_start:
                             positions1.append(position_vocab1.lookup(former_tf_start - i))
@@ -270,7 +301,7 @@ def getRelationInstance2(tokens, entities, relations, names, word_vocab, relatio
                     assert len(latter_token)>0
 
 
-                    features = {'tokens': words, 'positions1': positions1, 'positions2': positions2}
+                    features = {'tokens': words, 'postag': postags, 'positions1': positions1, 'positions2': positions2}
                     if type_constraint == 1:
                         features['e1_type'] = entity_type_vocab.lookup(former['type'])
                         features['e2_type'] = entity_type_vocab.lookup(latter['type'])
@@ -353,6 +384,7 @@ def my_collate(batch, sort):
 
 def pad(x, y, eos_idx, sort):
     tokens = [s['tokens'] for s in x]
+    postag = [s['postag'] for s in x]
     positions1 = [s['positions1'] for s in x]
     positions2 = [s['positions2'] for s in x]
     e1_type = [s['e1_type'] for s in x]
@@ -371,6 +403,8 @@ def pad(x, y, eos_idx, sort):
     # features
     tokens = pad_sequence(tokens, max_len, eos_idx)
     lengths = torch.LongTensor(lengths)
+
+    postag = pad_sequence(postag, max_len, eos_idx)
 
     positions1 = pad_sequence(positions1, max_len, eos_idx)
     positions2 = pad_sequence(positions2, max_len, eos_idx)
@@ -399,6 +433,8 @@ def pad(x, y, eos_idx, sort):
         sort_len, sort_idx = lengths.sort(0, descending=True)
         tokens = tokens.index_select(0, sort_idx)
 
+        postag = postag.index_select(0, sort_idx)
+
         positions1 = positions1.index_select(0, sort_idx)
         positions2 = positions2.index_select(0, sort_idx)
 
@@ -416,10 +452,10 @@ def pad(x, y, eos_idx, sort):
 
         y = y.index_select(0, sort_idx)
 
-        return [tokens, positions1, positions2, e1_token, e2_token], \
+        return [tokens, postag, positions1, positions2, e1_token, e2_token], \
                [e1_length, e2_length, e1_type, e2_type, tok_num_betw, et_num, sort_len], y
     else:
-        return [tokens, positions1, positions2, e1_token, e2_token], \
+        return [tokens, postag, positions1, positions2, e1_token, e2_token], \
                [e1_length, e2_length, e1_type, e2_type, tok_num_betw, et_num, lengths], y
 
 

@@ -100,7 +100,7 @@ class MLP(nn.Module):
         self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, hidden_features, x2, x1):
-        tokens, positions1, positions2, e1_token, e2_token = x2
+        _, _, _, _, e1_token, e2_token = x2
         e1_length, e2_length, e1_type, e2_type, tok_num_betw, et_num, lengths = x1
 
         e1_t = self.entity_type_emb(e1_type)

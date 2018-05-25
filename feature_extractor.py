@@ -7,7 +7,7 @@ from options import opt
 
 class CNNFeatureExtractor(nn.Module):
     def __init__(self,
-                 word_vocab, position1_vocab, position2_vocab,
+                 word_vocab, postag_vocab, position1_vocab, position2_vocab,
                  num_layers,
                  hidden_size,
                  kernel_num,
@@ -18,6 +18,9 @@ class CNNFeatureExtractor(nn.Module):
         self.word_emb = nn.Embedding(word_vocab.vocab_size, word_vocab.emb_size, padding_idx=word_vocab.pad_idx)
         self.word_emb.weight.data = torch.from_numpy(word_vocab.embeddings).float()
 
+        self.postag_emb = nn.Embedding(postag_vocab.vocab_size, postag_vocab.emb_size, padding_idx=postag_vocab.pad_idx)
+        self.postag_emb.weight.data = torch.from_numpy(postag_vocab.embeddings).float()
+
         self.position1_emb = nn.Embedding(position1_vocab.vocab_size, position1_vocab.emb_size,
                                           padding_idx=position1_vocab.pad_idx)
         self.position1_emb.weight.data = torch.from_numpy(position1_vocab.embeddings).float()
@@ -26,7 +29,7 @@ class CNNFeatureExtractor(nn.Module):
                                           padding_idx=position2_vocab.pad_idx)
         self.position2_emb.weight.data = torch.from_numpy(position2_vocab.embeddings).float()
 
-        self.input_size = word_vocab.emb_size+position1_vocab.emb_size+position2_vocab.emb_size
+        self.input_size = word_vocab.emb_size+postag_vocab.emb_size+position1_vocab.emb_size+position2_vocab.emb_size
 
         self.hidden_size = hidden_size
         self.kernel_num = kernel_num
@@ -48,20 +51,20 @@ class CNNFeatureExtractor(nn.Module):
                                       nn.Linear(len(kernel_sizes) * kernel_num, hidden_size))
             else:
                 self.fcnet.add_module('f-linear-{}'.format(i), nn.Linear(hidden_size, hidden_size))
-            # if batch_norm:
-            #     self.fcnet.add_module('f-bn-{}'.format(i), nn.BatchNorm1d(hidden_size))
+
             if opt.model_bn:
                 self.fcnet.add_module('f-bn-{}'.format(i), nn.BatchNorm1d(hidden_size))
             self.fcnet.add_module('f-relu-{}'.format(i), nn.ReLU())
 
     def forward(self, x2, x1):
-        tokens, positions1, positions2, e1_token, e2_token = x2
+        tokens, postag, positions1, positions2, e1_token, e2_token = x2
 
         tokens = self.word_emb(tokens)  # (bz, seq, emb)
+        postag = self.postag_emb(postag)
         positions1 = self.position1_emb(positions1)
         positions2 = self.position2_emb(positions2)
 
-        embeds = torch.cat((tokens, positions1, positions2), 2) # (bz, seq, word_emb+pos1_emb+pos2_emb)
+        embeds = torch.cat((tokens, postag, positions1, positions2), 2) # (bz, seq, ?)
 
         # conv
         embeds = embeds.unsqueeze(1)  # batch_size, 1, seq_len, emb_size

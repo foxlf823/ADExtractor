@@ -22,6 +22,7 @@ import copy
 
 def dataset_stat(tokens, entities, relations):
     word_alphabet = sortedcontainers.SortedSet()
+    postag_alphabet = sortedcontainers.SortedSet()
     relation_alphabet = sortedcontainers.SortedSet()
     entity_type_alphabet = sortedcontainers.SortedSet()
     entity_alphabet = sortedcontainers.SortedSet()
@@ -36,6 +37,7 @@ def dataset_stat(tokens, entities, relations):
         while sentence.shape[0] != 0:
             for _, token in sentence.iterrows():
                 word_alphabet.add(utils.normalizeWord(token['text']))
+                postag_alphabet.add(token['postag'])
 
             entities_in_sentence = doc_entity[(doc_entity['sent_idx'] == sent_idx)]
             for _, entity in entities_in_sentence.iterrows():
@@ -51,7 +53,7 @@ def dataset_stat(tokens, entities, relations):
         for _, relation in doc_relation.iterrows():
             relation_alphabet.add(relation['type'])
 
-    return word_alphabet, relation_alphabet, entity_type_alphabet, entity_alphabet
+    return word_alphabet, postag_alphabet, relation_alphabet, entity_type_alphabet, entity_alphabet
 
 
 
@@ -116,15 +118,16 @@ def test2(test_token, test_entity, test_relation, test_name, result_dumpdir):
             bioc.dump(collection, fp)
 
 def pretrain(train_token, train_entity, train_relation, train_name, test_token, test_entity, test_relation, test_name):
-    word_alphabet, relation_alphabet, entity_type_alphabet, entity_alphabet = dataset_stat(train_token, train_entity, train_relation)
+    word_alphabet, postag_alphabet, relation_alphabet, entity_type_alphabet, entity_alphabet = dataset_stat(train_token, train_entity, train_relation)
     logging.info("training dataset stat completed")
     if opt.full_data:
-        test_word_alphabet, test_relation_alphabet, test_entity_type_alphabet, test_entity_alphabet = dataset_stat(test_token, test_entity, test_relation)
+        test_word_alphabet, test_postag_alphabet, test_relation_alphabet, test_entity_type_alphabet, test_entity_alphabet = dataset_stat(test_token, test_entity, test_relation)
         word_alphabet = word_alphabet | test_word_alphabet
+        postag_alphabet = postag_alphabet | test_postag_alphabet
         relation_alphabet = relation_alphabet | test_relation_alphabet
         entity_type_alphabet = entity_type_alphabet | test_entity_type_alphabet
         entity_alphabet = entity_alphabet | test_entity_alphabet
-        del test_word_alphabet, test_relation_alphabet, test_entity_type_alphabet, test_entity_alphabet
+        del test_word_alphabet, test_postag_alphabet, test_relation_alphabet, test_entity_type_alphabet, test_entity_alphabet
         logging.info("test dataset stat completed")
 
     position_alphabet = sortedcontainers.SortedSet()
@@ -134,6 +137,7 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
 
     relation_vocab = vocab.Vocab(relation_alphabet, None, opt.relation_emb_size)
     word_vocab = vocab.Vocab(word_alphabet, opt.emb, opt.word_emb_size)
+    postag_vocab = vocab.Vocab(postag_alphabet, None, opt.pos_emb_size)
     entity_type_vocab = vocab.Vocab(entity_type_alphabet, None, opt.entity_type_emb_size)
     entity_vocab = vocab.Vocab(entity_alphabet, None, opt.entity_emb_size)
     position_vocab1 = vocab.Vocab(position_alphabet, None, opt.position_emb_size)
@@ -145,6 +149,7 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
 
     logging.info("saving ... vocab")
     pickle.dump(word_vocab, open(os.path.join(opt.pretrain, 'word_vocab.pkl'), "wb"), True)
+    pickle.dump(postag_vocab, open(os.path.join(opt.pretrain, 'postag_vocab.pkl'), "wb"), True)
     pickle.dump(relation_vocab, open(os.path.join(opt.pretrain, 'relation_vocab.pkl'), "wb"), True)
     pickle.dump(entity_type_vocab, open(os.path.join(opt.pretrain, 'entity_type_vocab.pkl'), "wb"), True)
     pickle.dump(entity_vocab, open(os.path.join(opt.pretrain, 'entity_vocab.pkl'), "wb"), True)
@@ -153,14 +158,16 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     pickle.dump(tok_num_betw_vocab, open(os.path.join(opt.pretrain, 'tok_num_betw_vocab.pkl'), "wb"), True)
     pickle.dump(et_num_vocab, open(os.path.join(opt.pretrain, 'et_num_vocab.pkl'), "wb"), True)
 
-    train_X, train_Y, _ = utils.getRelationInstance2(train_token, train_entity, train_relation, train_name, word_vocab, relation_vocab, entity_type_vocab,
+    train_X, train_Y, _ = utils.getRelationInstance2(train_token, train_entity, train_relation, train_name, word_vocab, postag_vocab,
+                                                     relation_vocab, entity_type_vocab,
                                                      entity_vocab, position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab)
     logging.info("training instance build completed, total {}".format(len(train_Y)))
     pickle.dump(train_X, open(os.path.join(opt.pretrain, 'train_X.pkl'), "wb"), True)
     pickle.dump(train_Y, open(os.path.join(opt.pretrain, 'train_Y.pkl'), "wb"), True)
 
 
-    test_X, test_Y, test_other = utils.getRelationInstance2(test_token, test_entity, test_relation, test_name, word_vocab, relation_vocab, entity_type_vocab,
+    test_X, test_Y, test_other = utils.getRelationInstance2(test_token, test_entity, test_relation, test_name, word_vocab, postag_vocab,
+                                                            relation_vocab, entity_type_vocab,
                                                             entity_vocab, position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab)
     logging.info("test instance build completed, total {}".format(len(test_Y)))
     pickle.dump(test_X, open(os.path.join(opt.pretrain, 'test_X.pkl'), "wb"), True)
@@ -250,6 +257,7 @@ def train():
 
     logging.info("loading ... vocab")
     word_vocab = pickle.load(open(os.path.join(opt.pretrain, 'word_vocab.pkl'), 'rb'))
+    postag_vocab = pickle.load(open(os.path.join(opt.pretrain, 'postag_vocab.pkl'), 'rb'))
     relation_vocab = pickle.load(open(os.path.join(opt.pretrain, 'relation_vocab.pkl'), 'rb'))
     entity_type_vocab = pickle.load(open(os.path.join(opt.pretrain, 'entity_type_vocab.pkl'), 'rb'))
     entity_vocab = pickle.load(open(os.path.join(opt.pretrain, 'entity_vocab.pkl'), 'rb'))
@@ -301,7 +309,7 @@ def train():
         feature_extractor = LSTMFeatureExtractor(word_vocab, position_vocab1, position_vocab2,
                                                  opt.F_layers, opt.shared_hidden_size, opt.dropout)
     elif opt.model.lower() == 'cnn':
-        feature_extractor = CNNFeatureExtractor(word_vocab, position_vocab1, position_vocab2,
+        feature_extractor = CNNFeatureExtractor(word_vocab, postag_vocab, position_vocab1, position_vocab2,
                                                 opt.F_layers, opt.shared_hidden_size,
                                   opt.kernel_num, opt.kernel_sizes, opt.dropout)
     else:
