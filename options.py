@@ -56,7 +56,7 @@ parser.add_argument('-model_bn', action='store_true', default=False)
 # high-level model
 parser.add_argument('-model_high', default='capsule', help='capsule, mlp, capsule_em')
 parser.add_argument('-dim_enlarge_rate', type=int, default=2)
-parser.add_argument('-init_dim_cap', type=int, default=4)
+parser.add_argument('-init_dim_cap', type=int, default=8)
 parser.add_argument('-model_high_bn', action='store_true', default=False)
 parser.add_argument('-reconstruct', action='store_true', default=False)
 parser.add_argument('-lam_recon', default=0.0005 * 256, type=float,

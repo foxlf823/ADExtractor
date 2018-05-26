@@ -73,7 +73,7 @@ class SentimentClassifier(nn.Module):
 
 class MLP(nn.Module):
     def __init__(self, context_feature_size, relation_vocab, entity_type_vocab, entity_vocab,  tok_num_betw_vocab,
-                                         et_num_vocab,):
+                                         et_num_vocab):
         super(MLP, self).__init__()
 
         self.entity_type_emb = nn.Embedding(entity_type_vocab.vocab_size, entity_type_vocab.emb_size,

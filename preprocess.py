@@ -65,19 +65,11 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
     df_doc.index = range(df_doc.shape[0])
 
     # entity
-    # entity_and_type = {}
     entity_span_in_this_passage = [] # to determine entity overlap
     anno_data = []
     for entity in bioc_passage.annotations:
         start = entity.locations[0].offset
         end = entity.locations[0].end
-
-        # entity_boudary = str(start + ' ' + end)
-        # if entity_boudary not in entity_and_type:
-        #     entity_and_type[entity_boudary] = entity.infons['type']
-        # else:
-        #     if (entity_and_type[entity_boudary] != entity.infons['type']):
-        #         logging.debug('file {}, entity {}, double annotation'.format(fileName, entity.id))
 
         tmp_df = pd.DataFrame(entity_span_in_this_passage, columns = ['start','end', 'type'])
         #result_df = tmp_df[((tmp_df['start']<=start)&(tmp_df['end']>start)) | ((tmp_df['start']<end)&(tmp_df['end']>=end))]
@@ -122,7 +114,7 @@ def processOneFile(fileName, annotation_dir, corpus_dir):
 
             if total_overlap:
                 logging.debug('file {}, entity {}, double annotation'.format(fileName, entity.id))
-
+                # double annotation
                 sent_idx = entity_in_sentence(start, end, all_sents_inds)
                 if sent_idx == -1:
                     raise RuntimeError('file {}, entity {}, cannot find entity in all sentences'.format(fileName, entity.id))

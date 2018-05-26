@@ -95,66 +95,99 @@ class DenseCapsule(nn.Module):
         return torch.squeeze(outputs, dim=-2)
 
 
+# class PrimaryCapsule(nn.Module):
+#
+#     def __init__(self, in_channels, out_channels, dim_caps, kernel_size, stride=1, padding=0):
+#         super(PrimaryCapsule, self).__init__()
+#         self.dim_caps = dim_caps
+#         self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
+#         if opt.model_high_bn:
+#             self.conv2d_bn = nn.BatchNorm2d(out_channels)
+#
+#     def forward(self, x):
+#         outputs = self.conv2d(x)
+#         if opt.model_high_bn:
+#             outputs = self.conv2d_bn(outputs)
+#         outputs = outputs.view(x.size(0), -1, self.dim_caps)
+#         return squash(outputs)
+
 class PrimaryCapsule(nn.Module):
 
-    def __init__(self, in_channels, out_channels, dim_caps, kernel_size, stride=1, padding=0):
+    def __init__(self, dim_caps, stride):
         super(PrimaryCapsule, self).__init__()
         self.dim_caps = dim_caps
-        self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
+        self.conv = nn.Conv1d(self.dim_caps, self.dim_caps, kernel_size=1, stride=stride, padding=0)
         if opt.model_high_bn:
-            self.conv2d_bn = nn.BatchNorm2d(out_channels)
+            self.conv_bn = nn.BatchNorm1d(self.dim_caps)
 
     def forward(self, x):
-        outputs = self.conv2d(x)
+        x = x.view(x.size(0), self.dim_caps, -1)
+        outputs = self.conv(x)
         if opt.model_high_bn:
-            outputs = self.conv2d_bn(outputs)
-        outputs = outputs.view(x.size(0), -1, self.dim_caps)
+            outputs = self.conv_bn(outputs)
+        outputs = outputs.permute(0, 2, 1)
         return squash(outputs)
 
 class CapsuleNet(nn.Module):
 
-    def __init__(self, input_size, relation_vocab, entity_type_vocab, entity_vocab):
+    def __init__(self, context_feature_size, relation_vocab, entity_type_vocab, entity_vocab, tok_num_betw_vocab,
+                                         et_num_vocab):
         super(CapsuleNet, self).__init__()
 
-        self.primarycaps = PrimaryCapsule(16, 16, 8, kernel_size=1, stride=1, padding=0)
+        self.input_cap_dim = opt.init_dim_cap
+        assert entity_type_vocab.emb_size == entity_vocab.emb_size
+        assert entity_type_vocab.emb_size == tok_num_betw_vocab.emb_size
+        assert entity_type_vocab.emb_size == et_num_vocab.emb_size
 
-        self.primary_cap_dim = 8
-        assert input_size%self.primary_cap_dim == 0
-        self.primary_cap_num = input_size // self.primary_cap_dim + 2 + 2
+        # context capsule setting
+        self.context_cap_stride = 1
+        self.context_caps = PrimaryCapsule(self.input_cap_dim, self.context_cap_stride)
+        assert context_feature_size % (self.input_cap_dim * self.context_cap_stride) == 0
+        self.context_cap_num = context_feature_size // (self.input_cap_dim * self.context_cap_stride)
 
-        assert self.primary_cap_dim == entity_type_vocab.emb_size
-        assert self.primary_cap_dim == entity_vocab.emb_size
+        # other features just reshape
+        assert entity_type_vocab.emb_size % self.input_cap_dim == 0
 
-        self.class_num = relation_vocab.vocab_size
-
-        self.digitcaps = DenseCapsule(in_num_caps=self.primary_cap_num, in_dim_caps=self.primary_cap_dim,
-                                      out_num_caps=relation_vocab.vocab_size, out_dim_caps=16, routings=3)
-
-        self.entity_type_emb = nn.Embedding(entity_type_vocab.vocab_size, entity_type_vocab.emb_size,
-                                          padding_idx=entity_type_vocab.pad_idx)
+        self.entity_type_emb = nn.Embedding(entity_type_vocab.vocab_size, entity_type_vocab.emb_size, padding_idx=entity_type_vocab.pad_idx)
         self.entity_type_emb.weight.data = torch.from_numpy(entity_type_vocab.embeddings).float()
 
-        self.entity_emb = nn.Embedding(entity_vocab.vocab_size, entity_vocab.emb_size,
-                                          padding_idx=entity_vocab.pad_idx)
+        self.entity_emb = nn.Embedding(entity_vocab.vocab_size, entity_vocab.emb_size, padding_idx=entity_vocab.pad_idx)
         self.entity_emb.weight.data = torch.from_numpy(entity_vocab.embeddings).float()
-
         self.dot_att = feature_extractor.DotAttentionLayer(entity_vocab.emb_size)
 
+        self.tok_num_betw_emb = nn.Embedding(tok_num_betw_vocab.vocab_size, tok_num_betw_vocab.emb_size, padding_idx=tok_num_betw_vocab.pad_idx)
+        self.tok_num_betw_emb.weight.data = torch.from_numpy(tok_num_betw_vocab.embeddings).float()
+
+        self.et_num_emb = nn.Embedding(et_num_vocab.vocab_size, et_num_vocab.emb_size, padding_idx=et_num_vocab.pad_idx)
+        self.et_num_emb.weight.data = torch.from_numpy(et_num_vocab.embeddings).float()
+
+        # dense capsule settings
+        # context capsule number + other capsule number
+        self.input_cap_num = self.context_cap_num + 6 * (entity_type_vocab.emb_size // self.input_cap_dim)
+        self.digitcaps = DenseCapsule(in_num_caps=self.input_cap_num, in_dim_caps=self.input_cap_dim,
+                                      out_num_caps=relation_vocab.vocab_size, out_dim_caps=16, routings=3)
+
+
+        # output
+        self.class_num = relation_vocab.vocab_size
+
         if opt.reconstruct:
+            self.input_size = context_feature_size + 6*entity_type_vocab.emb_size
             self.decoder = nn.Sequential(
                 nn.Linear(16 * relation_vocab.vocab_size, 256),
                 nn.ReLU(inplace=True),
                 nn.Linear(256, 512),
                 nn.ReLU(inplace=True),
-                nn.Linear(512, self.primary_cap_num*self.primary_cap_dim),
+                nn.Linear(512, self.input_size),
                 nn.Sigmoid()
             )
             self.recon_loss = nn.MSELoss()
 
     def forward(self, hidden_features, x2, x1, y=None):
 
-        tokens, positions1, positions2, e1_token, e2_token = x2
-        e1_length, e2_length, e1_type, e2_type, lengths = x1
+        _, _, _, _, e1_token, e2_token = x2
+        e1_length, e2_length, e1_type, e2_type, tok_num_betw, et_num, lengths = x1
+
         bz = hidden_features.size(0)
 
         e1_t = self.entity_type_emb(e1_type)
@@ -164,6 +197,10 @@ class CapsuleNet(nn.Module):
         e1 = self.dot_att((e1, e1_length))
         e2 = self.entity_emb(e2_token)
         e2 = self.dot_att((e2, e2_length))
+
+        v_tok_num_betw = self.tok_num_betw_emb(tok_num_betw)
+        v_et_num = self.et_num_emb(et_num)
+
 
         # 1
         # hidden_features = hidden_features.view(bz, -1, self.primary_cap_dim)
@@ -175,20 +212,34 @@ class CapsuleNet(nn.Module):
         # x = squash(x)
 
         # 2
-        hidden_features = hidden_features.view(-1, 16, 4, 4)
-        hidden_features = self.primarycaps(hidden_features)
-        e1_t = e1_t.view(bz, -1, self.primary_cap_dim)
-        e2_t = e2_t.view(bz, -1, self.primary_cap_dim)
-        e1 = e1.view(bz, -1, self.primary_cap_dim)
-        e2 = e2.view(bz, -1, self.primary_cap_dim)
-        x = torch.cat((e1_t, e2_t, e1, e2), dim=1)
-        x = squash(x)
-        x = torch.cat((hidden_features, x), dim=1)
+        # hidden_features = hidden_features.view(-1, 16, 4, 4)
+        # hidden_features = self.primarycaps(hidden_features)
+        # e1_t = e1_t.view(bz, -1, self.primary_cap_dim)
+        # e2_t = e2_t.view(bz, -1, self.primary_cap_dim)
+        # e1 = e1.view(bz, -1, self.primary_cap_dim)
+        # e2 = e2.view(bz, -1, self.primary_cap_dim)
+        # x = torch.cat((e1_t, e2_t, e1, e2), dim=1)
+        # x = squash(x)
+        # x = torch.cat((hidden_features, x), dim=1)
 
         # 3
         # x = torch.cat((hidden_features, e1_t, e2_t, e1, e2), dim=1)
         # x = x.view(bz, 16, 3, 6)
         # x = self.primarycaps(x)
+
+
+        hidden_features = self.context_caps(hidden_features)
+
+        e1_t = e1_t.view(bz, -1, self.input_cap_dim)
+        e2_t = e2_t.view(bz, -1, self.input_cap_dim)
+        e1 = e1.view(bz, -1, self.input_cap_dim)
+        e2 = e2.view(bz, -1, self.input_cap_dim)
+        v_tok_num_betw = v_tok_num_betw.view(bz, -1, self.input_cap_dim)
+        v_et_num = v_et_num.view(bz, -1, self.input_cap_dim)
+        x = torch.cat((e1_t, e2_t, e1, e2, v_tok_num_betw, v_et_num), dim=1)
+        x = squash(x)
+
+        x = torch.cat((hidden_features, x), dim=1)
 
 
         x = self.digitcaps(x)
@@ -197,7 +248,7 @@ class CapsuleNet(nn.Module):
         if opt.reconstruct and (y is not None):
             y = one_hot1(y.view(bz, 1), self.class_num)
             reconstruction = self.decoder((x * y[:, :, None]).view(x.size(0), -1))
-            return length, reconstruction.view(-1, self.primary_cap_num, self.primary_cap_dim)
+            return length, reconstruction
         else:
             return length, None
 
@@ -222,9 +273,8 @@ class CapsuleNet(nn.Module):
         if opt.reconstruct:
 
             with torch.no_grad():
-                tokens, positions1, positions2, e1_token, e2_token = x2
-                e1_length, e2_length, e1_type, e2_type, lengths = x1
-                bz = hidden_features.size(0)
+                _, _, _, _, e1_token, e2_token = x2
+                e1_length, e2_length, e1_type, e2_type, tok_num_betw, et_num, lengths = x1
 
                 e1_t = self.entity_type_emb(e1_type)
                 e2_t = self.entity_type_emb(e2_type)
@@ -234,15 +284,10 @@ class CapsuleNet(nn.Module):
                 e2 = self.entity_emb(e2_token)
                 e2 = self.dot_att((e2, e2_length))
 
-                hidden_features = hidden_features.view(bz, -1, self.primary_cap_dim)
+                v_tok_num_betw = self.tok_num_betw_emb(tok_num_betw)
+                v_et_num = self.et_num_emb(et_num)
 
-                e1_t = e1_t.view(bz, -1, self.primary_cap_dim)
-                e2_t = e2_t.view(bz, -1, self.primary_cap_dim)
-
-                e1 = e1.view(bz, -1, self.primary_cap_dim)
-                e2 = e2.view(bz, -1, self.primary_cap_dim)
-
-                x = torch.cat((hidden_features, e1_t, e2_t, e1, e2), dim=1)
+                x = torch.cat((hidden_features, e1_t, e2_t, e1, e2, v_tok_num_betw, v_et_num), dim=1)
 
             L_recon = self.recon_loss(x_recon, x)
 

@@ -318,7 +318,8 @@ def train():
         feature_extractor = feature_extractor.cuda(opt.gpu)
 
     if opt.model_high == 'capsule':
-        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab)
+        m = capsule.CapsuleNet(opt.shared_hidden_size, relation_vocab, entity_type_vocab, entity_vocab, tok_num_betw_vocab,
+                                         et_num_vocab)
     elif opt.model_high == 'capsule_em':
         m = capsule_em.CapsuleNet_EM(opt.shared_hidden_size, relation_vocab)
     elif opt.model_high == 'mlp':

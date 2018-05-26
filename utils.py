@@ -174,7 +174,99 @@ def relationConstraint1(relation_type, type1, type2):
         raise RuntimeError("unknown relation type")
 
 
+def relationConstraint_chapman(type1, type2): # determine whether the constraint are satisfied, non-directional
 
+    if (type1 == 'Drug' and type2 == 'Dose'):
+        return 1
+    elif (type1 == 'Dose' and type2 == 'Drug'):
+        return -1
+    elif (type1 == 'Drug' and type2 == 'Frequency'):
+        return 1
+    elif (type1 == 'Frequency' and type2 == 'Drug'):
+        return -1
+    elif (type1 == 'Drug' and type2 == 'Route'):
+        return 1
+    elif (type1 == 'Route' and type2 == 'Drug'):
+        return -1
+    elif (type1 == 'Drug By' and type2 == 'Patient'):
+        return 1
+    elif (type1 == 'Patient' and type2 == 'Drug By'):
+        return -1
+    elif (type1 == 'Indication' and type2 == 'Severity') or (type1 == 'ADE' and type2 == 'Severity') or (type1 == 'SSLIF' and type2 == 'Severity'):
+        return 1
+    elif (type1 == 'Severity' and type2 == 'Indication') or (type1 == 'Severity' and type2 == 'ADE') or (type1 == 'Severity' and type2 == 'SSLIF'):
+        return -1
+    elif (type1 == 'Drug' and type2 == 'ADE'):
+        return 1
+    elif (type1 == 'ADE' and type2 == 'Drug'):
+        return -1
+    elif (type1 == 'Drug' and type2 == 'Indication'):
+        return 1
+    elif (type1 == 'Indication' and type2 == 'Drug'):
+        return -1
+    elif (type1 == 'Drug By' and type2 == 'Physician'):
+        return 1
+    elif (type1 == 'Physician' and type2 == 'Drug By'):
+        return -1
+    elif (type1 == 'Drug' and type2 == 'Duration'):
+        return 1
+    elif (type1 == 'Duration' and type2 == 'Drug'):
+        return -1
+    else:
+        return 0
+
+def relationConstraint_chapman1(relation_type, type1, type2):
+
+    if relation_type=='do':
+        if (type1 == 'Drug' and type2 == 'Dose') or (type1 == 'Dose' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+
+    elif relation_type=='fr':
+        if (type1 == 'Drug' and type2 == 'Frequency') or (type1 == 'Frequency' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+    elif relation_type=='manner/route':
+        if (type1 == 'Drug' and type2 == 'Route') or (type1 == 'Route' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+    elif relation_type=='Drug_By Patient':
+        if (type1 == 'Drug By' and type2 == 'Patient') or (type1 == 'Patient' and type2 == 'Drug By'):
+            return True
+        else:
+            return False
+    elif relation_type=='severity_type':
+        if (type1 == 'Indication' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'Indication') or \
+                (type1 == 'ADE' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'ADE') or \
+                (type1 == 'SSLIF' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'SSLIF'):
+            return True
+        else:
+            return False
+    elif relation_type=='adverse':
+        if (type1 == 'Drug' and type2 == 'ADE') or (type1 == 'ADE' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+    elif relation_type=='reason':
+        if (type1 == 'Drug' and type2 == 'Indication') or (type1 == 'Indication' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+    elif relation_type=='Drug_By Physician':
+        if (type1 == 'Drug By' and type2 == 'Physician') or (type1 == 'Physician' and type2 == 'Drug By'):
+            return True
+        else:
+            return False
+    elif relation_type=='du':
+        if (type1 == 'Drug' and type2 == 'Duration') or (type1 == 'Duration' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+    else:
+        raise RuntimeError("unknown relation type")
 
 # truncate before feature
 def getRelationInstance2(tokens, entities, relations, names, word_vocab, postag_vocab,
@@ -211,7 +303,8 @@ def getRelationInstance2(tokens, entities, relations, names, word_vocab, postag_
                     if former['start']==latter['start'] and former['end']==latter['end']:
                         continue
 
-                    type_constraint = relationConstraint(former['type'], latter['type'])
+                    #type_constraint = relationConstraint(former['type'], latter['type'])
+                    type_constraint = relationConstraint_chapman(former['type'], latter['type'])
                     if type_constraint == 0:
                         continue
 
