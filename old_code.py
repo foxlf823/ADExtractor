@@ -641,3 +641,203 @@ def getRelatonInstance(tokens, entities, relations, word_vocab, relation_vocab, 
     return X, Y
 
 
+class SentimentClassifier(nn.Module):
+    def __init__(self, context_feature_size, relation_vocab, entity_type_vocab, entity_vocab, tok_num_betw_vocab, et_num_vocab,
+                 num_layers,
+                 hidden_size,
+                 dropout,
+                 batch_norm):
+        super(SentimentClassifier, self).__init__()
+        assert num_layers >= 0, 'Invalid layer numbers'
+
+        self.entity_type_emb = nn.Embedding(entity_type_vocab.vocab_size, entity_type_vocab.emb_size, padding_idx=entity_type_vocab.pad_idx)
+        self.entity_type_emb.weight.data = torch.from_numpy(entity_type_vocab.embeddings).float()
+
+        self.entity_emb = nn.Embedding(entity_vocab.vocab_size, entity_vocab.emb_size, padding_idx=entity_vocab.pad_idx)
+        self.entity_emb.weight.data = torch.from_numpy(entity_vocab.embeddings).float()
+
+        self.tok_num_betw_emb = nn.Embedding(tok_num_betw_vocab.vocab_size, tok_num_betw_vocab.emb_size, padding_idx=tok_num_betw_vocab.pad_idx)
+        self.tok_num_betw_emb.weight.data = torch.from_numpy(tok_num_betw_vocab.embeddings).float()
+
+        self.et_num_emb = nn.Embedding(et_num_vocab.vocab_size, et_num_vocab.emb_size, padding_idx=et_num_vocab.pad_idx)
+        self.et_num_emb.weight.data = torch.from_numpy(et_num_vocab.embeddings).float()
+
+        self.dot_att = feature_extractor.DotAttentionLayer(entity_vocab.emb_size)
+
+        self.criterion = nn.CrossEntropyLoss()
+
+        self.input_size = context_feature_size+2*entity_type_vocab.emb_size+2*entity_vocab.emb_size + \
+                          tok_num_betw_vocab.emb_size + et_num_vocab.emb_size
+        self.hidden_size = hidden_size
+
+        self.net = nn.Sequential()
+        for i in range(num_layers):
+            if dropout > 0:
+                self.net.add_module('p-dropout-{}'.format(i), nn.Dropout(p=dropout))
+            if i == 0:
+                self.net.add_module('p-linear-{}'.format(i), nn.Linear(self.input_size, hidden_size))
+            else:
+                self.net.add_module('p-linear-{}'.format(i), nn.Linear(hidden_size, hidden_size))
+            if batch_norm:
+                self.net.add_module('p-bn-{}'.format(i), nn.BatchNorm1d(hidden_size))
+            self.net.add_module('p-relu-{}'.format(i), nn.ReLU())
+
+        self.net.add_module('p-linear-final', nn.Linear(hidden_size, relation_vocab.vocab_size))
+        #self.net.add_module('p-logsoftmax', nn.LogSoftmax(dim=-1))
+
+    def forward(self, hidden_features, x2, x1):
+        tokens, positions1, positions2, e1_token, e2_token = x2
+        e1_length, e2_length, e1_type, e2_type, tok_num_betw, et_num, lengths = x1
+
+        e1_t = self.entity_type_emb(e1_type)
+        e2_t = self.entity_type_emb(e2_type)
+
+        e1 = self.entity_emb(e1_token)
+        e1 = self.dot_att((e1, e1_length))
+        e2 = self.entity_emb(e2_token)
+        e2 = self.dot_att((e2, e2_length))
+
+        v_tok_num_betw = self.tok_num_betw_emb(tok_num_betw)
+
+        v_et_num = self.et_num_emb(et_num)
+
+        x = torch.cat((hidden_features, e1_t, e2_t, e1, e2, v_tok_num_betw, v_et_num), dim=1)
+
+        return self.net(x)
+
+    def loss(self, by, y_pred):
+
+        return self.criterion(y_pred, by)
+
+
+class WordVocab:
+    def __init__(self, txt_file):
+        with open(txt_file, 'r') as inf:
+            parts = inf.readline().split()
+            assert len(parts) == 2
+            self.vocab_size, self.emb_size = int(parts[0]), int(parts[1])
+            opt.vocab_size = self.vocab_size
+            opt.emb_size = self.emb_size
+            # add an UNK token
+            self.unk_tok = '<unk>'
+            self.unk_idx = 0
+            self.vocab_size += 1
+            self.v2wvocab = ['<unk>']
+            self.w2vvocab = {'<unk>': 0}
+            self.embeddings = np.empty((self.vocab_size, self.emb_size), dtype=np.float)
+            cnt = 1
+            for line in inf.readlines():
+                parts = line.rstrip().split(' ')
+                word = parts[0]
+                # add to vocab
+                self.v2wvocab.append(word)
+                self.w2vvocab[word] = cnt
+                # load vector
+                vector = [float(x) for x in parts[-self.emb_size:]]
+                self.embeddings[cnt] = vector
+                cnt += 1
+
+        self.eos_tok = '</s>'
+        opt.eos_idx = self.eos_idx = self.w2vvocab[self.eos_tok]
+        # randomly initialize <unk> vector
+        self.embeddings[self.unk_idx] = np.random.normal(0, 1, size=self.emb_size)
+        # normalize
+        self.embeddings /= np.linalg.norm(self.embeddings, axis=1).reshape(-1, 1)
+        # zero </s>
+        self.embeddings[self.eos_idx] = 0
+
+    def init_embed_layer(self):
+        word_emb = nn.Embedding(self.vocab_size, self.emb_size, padding_idx=self.eos_idx)
+        if not opt.random_emb:
+            word_emb.weight.data = torch.from_numpy(self.embeddings).float()
+        return word_emb
+
+    def lookup(self, word):
+
+        if word in self.w2vvocab:
+            return self.w2vvocab[word]
+        return self.unk_idx
+
+
+class RelationVocab:
+
+    def __init__(self, relations):
+
+        relationName = sortedcontainers.SortedSet()
+        for relation in relations:
+            relationName.update(relation['type'].tolist())
+
+        self.id2str = list(relationName)
+        self.vocab_size = len(self.id2str)
+        self.str2id = {}
+        cnt = 0
+        for str in self.id2str:
+            self.str2id[str] = cnt
+            cnt += 1
+        # add an UNK relation
+        self.unk = '<unk>'
+        self.unk_idx = self.vocab_size
+        self.id2str.append(self.unk)
+        self.str2id[self.unk] = self.unk_idx
+        self.vocab_size += 1
+
+    def lookup(self, item):
+
+        if item in self.str2id:
+            return self.str2id[item]
+        return self.unk_idx
+
+
+def relationConstraint_chapman1(relation_type, type1, type2):
+
+    if relation_type=='do':
+        if (type1 == 'Drug' and type2 == 'Dose') or (type1 == 'Dose' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+
+    elif relation_type=='fr':
+        if (type1 == 'Drug' and type2 == 'Frequency') or (type1 == 'Frequency' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+    elif relation_type=='manner/route':
+        if (type1 == 'Drug' and type2 == 'Route') or (type1 == 'Route' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+    elif relation_type=='Drug_By Patient':
+        if (type1 == 'Drug By' and type2 == 'Patient') or (type1 == 'Patient' and type2 == 'Drug By'):
+            return True
+        else:
+            return False
+    elif relation_type=='severity_type':
+        if (type1 == 'Indication' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'Indication') or \
+                (type1 == 'ADE' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'ADE') or \
+                (type1 == 'SSLIF' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'SSLIF'):
+            return True
+        else:
+            return False
+    elif relation_type=='adverse':
+        if (type1 == 'Drug' and type2 == 'ADE') or (type1 == 'ADE' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+    elif relation_type=='reason':
+        if (type1 == 'Drug' and type2 == 'Indication') or (type1 == 'Indication' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+    elif relation_type=='Drug_By Physician':
+        if (type1 == 'Drug By' and type2 == 'Physician') or (type1 == 'Physician' and type2 == 'Drug By'):
+            return True
+        else:
+            return False
+    elif relation_type=='du':
+        if (type1 == 'Drug' and type2 == 'Duration') or (type1 == 'Duration' and type2 == 'Drug'):
+            return True
+        else:
+            return False
+    else:
+        raise RuntimeError("unknown relation type")
+

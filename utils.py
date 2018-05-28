@@ -212,61 +212,47 @@ def relationConstraint_chapman(type1, type2): # determine whether the constraint
         return 1
     elif (type1 == 'Duration' and type2 == 'Drug'):
         return -1
+    # cardio begin
+    # cardio annotation are not all consistent with made
+    elif (type1 == 'Bleeding' and type2 == 'Severity'):
+        return 1
+    elif (type1 == 'Severity' and type2 == 'Bleeding'):
+        return -1
+    elif (type1 == 'BleedingLabEval' and type2 == 'Severity'):
+        return 1
+    elif (type1 == 'Severity' and type2 == 'BleedingLabEval'):
+        return -1
+    elif (type1 == 'Bleeding' and type2 == 'BleedingAnatomicSite'):
+        return 1
+    elif (type1 == 'BleedingAnatomicSite' and type2 == 'Bleeding'):
+        return -1
+    # cardio end
     else:
         return 0
 
-def relationConstraint_chapman1(relation_type, type1, type2):
-
-    if relation_type=='do':
-        if (type1 == 'Drug' and type2 == 'Dose') or (type1 == 'Dose' and type2 == 'Drug'):
-            return True
-        else:
-            return False
-
-    elif relation_type=='fr':
-        if (type1 == 'Drug' and type2 == 'Frequency') or (type1 == 'Frequency' and type2 == 'Drug'):
-            return True
-        else:
-            return False
-    elif relation_type=='manner/route':
-        if (type1 == 'Drug' and type2 == 'Route') or (type1 == 'Route' and type2 == 'Drug'):
-            return True
-        else:
-            return False
-    elif relation_type=='Drug_By Patient':
-        if (type1 == 'Drug By' and type2 == 'Patient') or (type1 == 'Patient' and type2 == 'Drug By'):
-            return True
-        else:
-            return False
-    elif relation_type=='severity_type':
-        if (type1 == 'Indication' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'Indication') or \
-                (type1 == 'ADE' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'ADE') or \
-                (type1 == 'SSLIF' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'SSLIF'):
-            return True
-        else:
-            return False
-    elif relation_type=='adverse':
-        if (type1 == 'Drug' and type2 == 'ADE') or (type1 == 'ADE' and type2 == 'Drug'):
-            return True
-        else:
-            return False
-    elif relation_type=='reason':
-        if (type1 == 'Drug' and type2 == 'Indication') or (type1 == 'Indication' and type2 == 'Drug'):
-            return True
-        else:
-            return False
-    elif relation_type=='Drug_By Physician':
-        if (type1 == 'Drug By' and type2 == 'Physician') or (type1 == 'Physician' and type2 == 'Drug By'):
-            return True
-        else:
-            return False
-    elif relation_type=='du':
-        if (type1 == 'Drug' and type2 == 'Duration') or (type1 == 'Duration' and type2 == 'Drug'):
-            return True
-        else:
-            return False
+# cardio begin
+# cardio annotation are not all consistent with made
+def relation_merge(relation_type):
+    if relation_type == "Drug_Dose":
+        return 'do'
+    elif relation_type == "Drug_Frequency":
+        return 'fr'
+    elif relation_type == "Drug_Route":
+        return 'manner/route'
+    elif relation_type == "SSLIF_Severity" or relation_type == "Indication_Severity" or relation_type == "Bleeding_Severity" or \
+        relation_type == "BleedingLabEval_Severity":
+        return 'severity_type'
+    elif relation_type == "Drug_ADE":
+        return 'adverse'
+    elif relation_type == "Drug_Indication":
+        return 'reason'
+    elif relation_type == "Drug_Duration":
+        return 'du'
     else:
-        raise RuntimeError("unknown relation type")
+        return relation_type
+
+# cardio end
+
 
 # truncate before feature
 def getRelationInstance2(tokens, entities, relations, names, word_vocab, postag_vocab,
@@ -417,7 +403,9 @@ def getRelationInstance2(tokens, entities, relations, names, word_vocab, postag_
                         Y.append(relation_vocab.lookup('<unk>'))
                         cnt_neg += 1
                     else:
-                        Y.append(relation_vocab.lookup(gold_relations.iloc[0]['type']))
+                        gold_answer = gold_relations.iloc[0]['type']
+                        gold_answer = relation_merge(gold_answer)
+                        Y.append(relation_vocab.lookup(gold_answer))
 
                     other_info = {}
                     other_info['doc_name'] = doc_name
@@ -634,3 +622,16 @@ def endless_get_next_batch(loaders, iters):
 def freeze_layer(layer):
     for param in layer.parameters():
         param.requires_grad = False
+
+def freeze_net(net):
+    if not net:
+        return
+    for p in net.parameters():
+        p.requires_grad = False
+
+
+def unfreeze_net(net):
+    if not net:
+        return
+    for p in net.parameters():
+        p.requires_grad = True

@@ -17,6 +17,8 @@ parser.add_argument('-emb', type=str, default="/Users/feili/project/emb_100_for_
 #parser.add_argument('-emb', type=str, default="/Users/feili/project/man/data/w2v/word2vec.txt")
 # parser.add_argument('-emb', type=str, default="/Users/feili/project/abd_naacl_emb/pubmed+wiki+pitts-nopunct-lower-cbow-n10.bin")
 parser.add_argument('-pretrain', type=str, default="./pretrain")
+#parser.add_argument('-otherdata', type=str, default="/Users/feili/Desktop/umass/bioC_data/other")
+parser.add_argument('-otherdata', type=str, default="")
 
 # preprocessing
 parser.add_argument('-max_seq_len', type=int, default=500) # max sequence length, related to input length, position emb
@@ -36,6 +38,7 @@ parser.add_argument('-dropout', type=float, default=0.4)
 parser.add_argument('-strategy', default='all', help='all, balance, no-unk, part-unk')
 parser.add_argument('-unk_ratio', type=float, default=0.03) # only work when 'part-unk'
 parser.add_argument('-tune_wordemb', action='store_true', default=False)
+parser.add_argument('-adv', action='store_true', default=False)
 
 # hyper-parameter
 parser.add_argument('-position_emb_size', default=10, type=int)

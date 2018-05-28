@@ -15,19 +15,10 @@ class CNNFeatureExtractor(nn.Module):
                  dropout):
         super(CNNFeatureExtractor, self).__init__()
 
-        self.word_emb = nn.Embedding(word_vocab.vocab_size, word_vocab.emb_size, padding_idx=word_vocab.pad_idx)
-        self.word_emb.weight.data = torch.from_numpy(word_vocab.embeddings).float()
-
-        self.postag_emb = nn.Embedding(postag_vocab.vocab_size, postag_vocab.emb_size, padding_idx=postag_vocab.pad_idx)
-        self.postag_emb.weight.data = torch.from_numpy(postag_vocab.embeddings).float()
-
-        self.position1_emb = nn.Embedding(position1_vocab.vocab_size, position1_vocab.emb_size,
-                                          padding_idx=position1_vocab.pad_idx)
-        self.position1_emb.weight.data = torch.from_numpy(position1_vocab.embeddings).float()
-
-        self.position2_emb = nn.Embedding(position2_vocab.vocab_size, position2_vocab.emb_size,
-                                          padding_idx=position2_vocab.pad_idx)
-        self.position2_emb.weight.data = torch.from_numpy(position2_vocab.embeddings).float()
+        self.word_emb = word_vocab.init_embed_layer()
+        self.postag_emb = postag_vocab.init_embed_layer()
+        self.position1_emb = position1_vocab.init_embed_layer()
+        self.position2_emb = position2_vocab.init_embed_layer()
 
         self.input_size = word_vocab.emb_size+postag_vocab.emb_size+position1_vocab.emb_size+position2_vocab.emb_size
 
@@ -90,16 +81,9 @@ class LSTMFeatureExtractor(nn.Module):
         self.hidden_size = hidden_size // 2
         self.n_cells = self.num_layers * 2
 
-        self.word_emb = nn.Embedding(word_vocab.vocab_size, word_vocab.emb_size, padding_idx=word_vocab.pad_idx)
-        self.word_emb.weight.data = torch.from_numpy(word_vocab.embeddings).float()
-
-        self.position1_emb = nn.Embedding(position1_vocab.vocab_size, position1_vocab.emb_size,
-                                          padding_idx=position1_vocab.pad_idx)
-        self.position1_emb.weight.data = torch.from_numpy(position1_vocab.embeddings).float()
-
-        self.position2_emb = nn.Embedding(position2_vocab.vocab_size, position2_vocab.emb_size,
-                                          padding_idx=position2_vocab.pad_idx)
-        self.position2_emb.weight.data = torch.from_numpy(position2_vocab.embeddings).float()
+        self.word_emb = word_vocab.init_embed_layer()
+        self.position1_emb = position1_vocab.init_embed_layer()
+        self.position2_emb = position2_vocab.init_embed_layer()
 
         self.input_size = word_vocab.emb_size+position1_vocab.emb_size+position2_vocab.emb_size
 

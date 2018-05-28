@@ -148,18 +148,14 @@ class CapsuleNet(nn.Module):
         # other features just reshape
         assert entity_type_vocab.emb_size % self.input_cap_dim == 0
 
-        self.entity_type_emb = nn.Embedding(entity_type_vocab.vocab_size, entity_type_vocab.emb_size, padding_idx=entity_type_vocab.pad_idx)
-        self.entity_type_emb.weight.data = torch.from_numpy(entity_type_vocab.embeddings).float()
+        self.entity_type_emb = entity_type_vocab.init_embed_layer()
 
-        self.entity_emb = nn.Embedding(entity_vocab.vocab_size, entity_vocab.emb_size, padding_idx=entity_vocab.pad_idx)
-        self.entity_emb.weight.data = torch.from_numpy(entity_vocab.embeddings).float()
+        self.entity_emb = entity_vocab.init_embed_layer()
         self.dot_att = feature_extractor.DotAttentionLayer(entity_vocab.emb_size)
 
-        self.tok_num_betw_emb = nn.Embedding(tok_num_betw_vocab.vocab_size, tok_num_betw_vocab.emb_size, padding_idx=tok_num_betw_vocab.pad_idx)
-        self.tok_num_betw_emb.weight.data = torch.from_numpy(tok_num_betw_vocab.embeddings).float()
+        self.tok_num_betw_emb = tok_num_betw_vocab.init_embed_layer()
 
-        self.et_num_emb = nn.Embedding(et_num_vocab.vocab_size, et_num_vocab.emb_size, padding_idx=et_num_vocab.pad_idx)
-        self.et_num_emb.weight.data = torch.from_numpy(et_num_vocab.embeddings).float()
+        self.et_num_emb = et_num_vocab.init_embed_layer()
 
         # dense capsule settings
         # context capsule number + other capsule number
