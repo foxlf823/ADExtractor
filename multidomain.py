@@ -85,6 +85,17 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     pickle.dump(test_Y, open(os.path.join(opt.pretrain, 'test_Y.pkl'), "wb"), True)
     pickle.dump(test_other, open(os.path.join(opt.pretrain, 'test_Other.pkl'), "wb"), True)
 
+    logging.info("loading ... vocab")
+    word_vocab = pickle.load(open(os.path.join(opt.pretrain, 'word_vocab.pkl'), 'rb'))
+    postag_vocab = pickle.load(open(os.path.join(opt.pretrain, 'postag_vocab.pkl'), 'rb'))
+    relation_vocab = pickle.load(open(os.path.join(opt.pretrain, 'relation_vocab.pkl'), 'rb'))
+    entity_type_vocab = pickle.load(open(os.path.join(opt.pretrain, 'entity_type_vocab.pkl'), 'rb'))
+    entity_vocab = pickle.load(open(os.path.join(opt.pretrain, 'entity_vocab.pkl'), 'rb'))
+    position_vocab1 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab1.pkl'), 'rb'))
+    position_vocab2 = pickle.load(open(os.path.join(opt.pretrain, 'position_vocab2.pkl'), 'rb'))
+    tok_num_betw_vocab = pickle.load(open(os.path.join(opt.pretrain, 'tok_num_betw_vocab.pkl'), 'rb'))
+    et_num_vocab = pickle.load(open(os.path.join(opt.pretrain, 'et_num_vocab.pkl'), 'rb'))
+
     for other in other_name:
         other_X, other_Y, _ = utils.getRelationInstance2(other_token[other], other_entity[other], other_relation[other], other_name[other],
                                                                        word_vocab, postag_vocab, relation_vocab, entity_type_vocab,
@@ -166,15 +177,22 @@ def train(other_dir):
     else:
         raise RuntimeError('Unknown model {}'.format(opt.model_high))
 
+    if opt.adv:
+        D = DomainClassifier(1, opt.shared_hidden_size, opt.shared_hidden_size,
+                             len(opt.domains), opt.loss, opt.dropout, True)
+
     if torch.cuda.is_available():
         F_s, C = F_s.cuda(opt.gpu), C.cuda(opt.gpu)
         for f_d in F_d.values():
             f_d = f_d.cuda(opt.gpu)
+        if opt.adv:
+            D = D.cuda(opt.gpu)
 
     iter_parameter = itertools.chain(
         *map(list, [F_s.parameters() if F_s else [], C.parameters()] + [f.parameters() for f in F_d.values()]))
     optimizer = optim.Adam(iter_parameter, lr=opt.learning_rate)
-
+    if opt.adv:
+        optimizerD = optim.Adam(D.parameters(), lr=opt.learning_rate)
 
 
     best_acc = 0.0
@@ -185,19 +203,69 @@ def train(other_dir):
         C.train()
         for f in F_d.values():
             f.train()
+        if opt.adv:
+            D.train()
 
+        # domain accuracy
         correct, total = defaultdict(int), defaultdict(int)
+        # D accuracy
+        if opt.adv:
+            d_correct, d_total = 0, 0
 
         # conceptually view 1 epoch as 1 epoch of the main domain
         num_iter = len(train_loaders['main'])
 
         for i in tqdm(range(num_iter)):
 
+            if opt.adv:
+                # D iterations
+                utils.freeze_net(F_s)
+                map(utils.freeze_net, F_d.values())
+                utils.freeze_net(C)
+                utils.unfreeze_net(D)
+
+                if opt.tune_wordemb == False:
+                    utils.freeze_net(F_s.word_emb)
+                    for f_d in F_d.values():
+                        utils.freeze_net(f_d.word_emb)
+                # WGAN n_critic trick since D trains slower
+                n_critic = opt.n_critic
+                if opt.wgan_trick:
+                    if opt.n_critic > 0 and ((epoch == 0 and i < 25) or i % 500 == 0):
+                        n_critic = 100
+
+                for _ in range(n_critic):
+                    D.zero_grad()
+
+                    # train on both labeled and unlabeled domains
+                    for domain in opt.domains:
+                        # targets not used
+                        x2, x1, _ = utils.endless_get_next_batch_without_rebatch(train_loaders[domain],
+                                                                                       train_iters[domain])
+                        d_targets = utils.get_domain_label(opt.loss, domain, len(x2[1]))
+                        shared_feat = F_s(x2, x1)
+                        d_outputs = D(shared_feat)
+                        # D accuracy
+                        _, pred = torch.max(d_outputs, 1)
+                        d_total += len(x2[1])
+                        if opt.loss.lower() == 'l2':
+                            _, tgt_indices = torch.max(d_targets, 1)
+                            d_correct += (pred == tgt_indices).sum().data.item()
+                            l_d = functional.mse_loss(d_outputs, d_targets)
+                            l_d.backward()
+                        else:
+                            d_correct += (pred == d_targets).sum().data.item()
+                            l_d = functional.nll_loss(d_outputs, d_targets)
+                            l_d.backward()
+
+                    optimizerD.step()
+
             # F&C iteration
             utils.unfreeze_net(F_s)
             map(utils.unfreeze_net, F_d.values())
             utils.unfreeze_net(C)
-
+            if opt.adv:
+                utils.freeze_net(D)
             if opt.tune_wordemb == False:
                 utils.freeze_net(F_s.word_emb)
                 for f_d in F_d.values():
@@ -249,6 +317,29 @@ def train(other_dir):
                 total[domain] += targets.size(0)
                 correct[domain] += (pred == targets).sum().data.item()
 
+            if opt.adv:
+                # update F with D gradients on all domains
+                for domain in opt.domains:
+                    x2, x1, _ = utils.endless_get_next_batch_without_rebatch(train_loaders[domain],
+                                                                                   train_iters[domain])
+                    shared_feat = F_s(x2, x1)
+                    d_outputs = D(shared_feat)
+                    if opt.loss.lower() == 'gr':
+                        d_targets = utils.get_domain_label(opt.loss, domain, len(x2[1]))
+                        l_d = functional.nll_loss(d_outputs, d_targets)
+                        if opt.lambd > 0:
+                            l_d *= -opt.lambd
+                    elif opt.loss.lower() == 'bs':
+                        d_targets = utils.get_random_domain_label(opt.loss, len(x2[1]))
+                        l_d = functional.kl_div(d_outputs, d_targets, size_average=False)
+                        if opt.lambd > 0:
+                            l_d *= opt.lambd
+                    elif opt.loss.lower() == 'l2':
+                        d_targets = utils.get_random_domain_label(opt.loss, len(x2[1]))
+                        l_d = functional.mse_loss(d_outputs, d_targets)
+                        if opt.lambd > 0:
+                            l_d *= opt.lambd
+                    l_d.backward()
 
             torch.nn.utils.clip_grad_norm_(iter_parameter, opt.grad_clip)
             optimizer.step()
@@ -259,6 +350,8 @@ def train(other_dir):
             unk_loaders[other], unk_iters[other] = makeDatasetUnknown(other_X, other_Y, relation_vocab, my_collate, opt.unk_ratio)
 
         logging.info('epoch {} end'.format(epoch))
+        if opt.adv and d_total > 0:
+            logging.info('D Training Accuracy: {}%'.format(100.0*d_correct/d_total))
         logging.info('Training accuracy:')
         logging.info('\t'.join(opt.domains))
         logging.info('\t'.join([str(100.0*correct[d]/total[d]) for d in opt.domains]))
@@ -272,6 +365,8 @@ def train(other_dir):
             for d in opt.domains:
                 torch.save(F_d[d].state_dict(), '{}/F_d_{}.pth'.format(opt.output, d))
             torch.save(C.state_dict(), '{}/C.pth'.format(opt.output))
+            if opt.adv:
+                torch.save(D.state_dict(), '{}/D.pth'.format(opt.output))
             pickle.dump(test_Other, open(os.path.join(opt.output, 'results.pkl'), "wb"), True)
             logging.info('New best accuracy: {}'.format(best_acc))
 
@@ -329,3 +424,39 @@ def evaluate(F_s, F_d, C, loader, other):
     return acc
 
 
+class DomainClassifier(nn.Module):
+    def __init__(self,
+                 num_layers,
+                 input_size,
+                 hidden_size,
+                 num_domains,
+                 loss_type,
+                 dropout,
+                 batch_norm=False):
+        super(DomainClassifier, self).__init__()
+        assert num_layers >= 0, 'Invalid layer numbers'
+        self.num_domains = num_domains
+        self.loss_type = loss_type
+        self.net = nn.Sequential()
+        for i in range(num_layers):
+            if dropout > 0:
+                self.net.add_module('q-dropout-{}'.format(i), nn.Dropout(p=dropout))
+            if i == 0:
+                self.net.add_module('q-linear-{}'.format(i), nn.Linear(input_size, hidden_size))
+            else:
+                self.net.add_module('q-linear-{}'.format(i), nn.Linear(hidden_size, hidden_size))
+            if batch_norm:
+                self.net.add_module('q-bn-{}'.format(i), nn.BatchNorm1d(hidden_size))
+            self.net.add_module('q-relu-{}'.format(i), nn.ReLU())
+
+        self.net.add_module('q-linear-final', nn.Linear(hidden_size, num_domains))
+        if loss_type.lower() == 'gr' or loss_type.lower() == 'bs':
+            self.net.add_module('q-logsoftmax', nn.LogSoftmax(dim=-1))
+
+    def forward(self, input):
+        scores = self.net(input)
+        if self.loss_type.lower() == 'l2':
+            # normalize
+            scores = functional.relu(scores)
+            scores /= torch.sum(scores, dim=1, keepdim=True)
+        return scores

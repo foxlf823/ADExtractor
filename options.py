@@ -39,6 +39,10 @@ parser.add_argument('-strategy', default='all', help='all, balance, no-unk, part
 parser.add_argument('-unk_ratio', type=float, default=0.03) # only work when 'part-unk'
 parser.add_argument('-tune_wordemb', action='store_true', default=False)
 parser.add_argument('-adv', action='store_true', default=False)
+parser.add_argument('-loss', default='gr')
+parser.add_argument('-wgan_trick', dest='wgan_trick', action='store_true', default=True)
+parser.add_argument('-n_critic', type=int, default=5) # hyperparameter k in the paper
+parser.add_argument('-lambd', type=float, default=0.05)
 
 # hyper-parameter
 parser.add_argument('-position_emb_size', default=10, type=int)

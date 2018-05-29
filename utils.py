@@ -304,7 +304,9 @@ def getRelationInstance2(tokens, entities, relations, names, word_vocab, postag_
                         )
                     ]
                     if gold_relations.shape[0] > 1:
-                        raise RuntimeError("the same entity pair has more than one relations")
+                        #raise RuntimeError("the same entity pair has more than one relations")
+                        logging.debug("entity {} and {} has more than one relations".format(former['id'], latter['id']))
+                        continue
 
                     # here we retrieve all the sentences inbetween two entities, sentence of former, sentence ..., sentence of latter
                     sent_idx = former['sent_idx']
@@ -635,3 +637,22 @@ def unfreeze_net(net):
         return
     for p in net.parameters():
         p.requires_grad = True
+
+domain_labels = {}
+def get_domain_label(loss, domain, size):
+    if (domain, size) in domain_labels:
+        return domain_labels[(domain, size)]
+    idx = opt.domains.index(domain)
+    if loss.lower() == 'l2':
+        labels = torch.FloatTensor(size, len(opt.all_domains))
+        labels.fill_(-1)
+        labels[:, idx].fill_(1)
+    else:
+        labels = torch.LongTensor(size)
+        labels.fill_(idx)
+
+    if torch.cuda.is_available():
+        labels = labels.cuda(opt.gpu)
+
+    domain_labels[(domain, size)] = labels
+    return labels
