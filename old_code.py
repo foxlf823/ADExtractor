@@ -841,3 +841,50 @@ def relationConstraint_chapman1(relation_type, type1, type2):
     else:
         raise RuntimeError("unknown relation type")
 
+
+def other_stat():
+    opt.otherdata = "/Users/feili/Desktop/umass/bioC_data/other"
+
+    # preprocess.preprocess(data_path)
+
+    # train_token, train_entity, train_relation, train_name = preprocess.loadPreprocessData(data_path)
+
+    other_token, other_entity, other_relation, other_name = {}, {}, {}, {}
+    for other_dir in os.listdir(opt.otherdata):
+        other_token[other_dir], other_entity[other_dir], other_relation[other_dir], other_name[
+            other_dir] = preprocess.loadPreprocessData(os.path.join(opt.otherdata, other_dir))
+    #
+    # for other in other_token:
+    #     other_word_alphabet, other_postag_alphabet, other_relation_alphabet, other_entity_type_alphabet, other_entity_alphabet = dataset_stat(
+    #         other_token[other], other_entity[other], other_relation[other])
+
+    relation_argument = set()
+
+    for domain in other_relation:
+        relations = other_relation[domain]
+        entities = other_entity[domain]
+        for i, doc_relation in enumerate(relations):
+            doc_entity = entities[i]
+
+            for _, r in doc_relation.iterrows():
+                entity1 = doc_entity[(doc_entity['id'] == r['entity1_id'])].iloc[0]
+                entity2 = doc_entity[(doc_entity['id'] == r['entity2_id'])].iloc[0]
+                rt = r['type']
+                e1 = entity1['type']
+                e2 = entity2['type']
+                relation_argument.add("{} | {} | {}".format(rt, e1, e2))
+
+    print relation_argument
+
+def entity_type_stat():
+    opt.traindata = "/Users/feili/Desktop/umass/MADE/MADE-1.0"
+    opt.testdata = "/Users/feili/Desktop/umass/MADE/made_test_data"
+
+    entity_type = set()
+    train_token, train_entity, _, train_name = preprocess.loadPreprocessData(opt.testdata)
+    for doc_entity in train_entity:
+
+        for _, entity in doc_entity.iterrows():
+            entity_type.add(entity['type'])
+
+    print(entity_type)
