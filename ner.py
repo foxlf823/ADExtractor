@@ -17,6 +17,7 @@ import torch.optim as optim
 import time
 import sys
 from utils.metric import get_ner_fmeasure
+from tqdm import tqdm
 
 def featureCapital(word):
     if word[0].isalpha() and word[0].isupper():
@@ -64,7 +65,7 @@ def generateData(tokens, entitys, names, output_file):
     """
     f = open(output_file, 'w')
 
-    for i, name in enumerate(names):
+    for i in tqdm(range(len(names))):
         doc_token = tokens[i]
         doc_entity = entitys[i]
 
@@ -617,7 +618,6 @@ if opt.whattodo==1:
 elif opt.whattodo==2:
 
     # step 2, train a model via NCRFpp
-    opt.config = "demo.train.config"
     data = Data()
     data.read_config(opt.config)
     status = data.status.lower()
@@ -636,7 +636,6 @@ elif opt.whattodo==2:
 
 elif opt.whattodo==3:
     # step 3, evaluate on test data and output results in bioc format, one doc one file
-    opt.config = "demo.decode.config"
     data = Data()
     data.read_config(opt.config)
     status = data.status.lower()

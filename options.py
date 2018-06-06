@@ -69,6 +69,8 @@ parser.add_argument('-reconstruct', action='store_true', default=False)
 parser.add_argument('-lam_recon', default=0.0005 * 256, type=float,
                     help="The coefficient for the loss of decoder")
 
+# ner
+parser.add_argument('-config', default='demo.train.config')
 
 opt = parser.parse_args()
 

@@ -138,14 +138,18 @@ def relationConstraint1(relation_type, type1, type2):
             return True
         else:
             return False
+    # cardio begin
     elif relation_type=='severity_type':
         if (type1 == 'Indication' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'Indication') or \
                 (type1 == 'ADE' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'ADE') or \
                 (type1 == 'SSLIF' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'SSLIF') \
+                or (type1 == 'Bleeding' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'Bleeding') \
+                or (type1 == 'BleedingLabEval' and type2 == 'Severity') or (type1 == 'Severity' and type2 == 'BleedingLabEval') \
                 or (type1 == 'Severity' and type2 == 'Severity'):
             return True
         else:
             return False
+    # cardio end
     elif relation_type=='adverse':
         if (type1 == 'Drug' and type2 == 'ADE') or (type1 == 'ADE' and type2 == 'Drug') or \
                 (type1 == 'SSLIF' and type2 == 'ADE') or (type1 == 'ADE' and type2 == 'SSLIF') \
@@ -170,8 +174,15 @@ def relationConstraint1(relation_type, type1, type2):
             return True
         else:
             return False
+    # cardio begin
+    elif relation_type=='Bleeding_BleedingAnatomicSite':
+        if (type1 == 'Bleeding' and type2 == 'BleedingAnatomicSite') or (type1 == 'BleedingAnatomicSite' and type2 == 'Bleeding'):
+            return True
+        else:
+            return False
+    # cardio end
     else:
-        raise RuntimeError("unknown relation type")
+        raise RuntimeError("unknown relation type {}".format(relation_type))
 
 
 def relationConstraint_chapman(type1, type2): # determine whether the constraint are satisfied, non-directional
