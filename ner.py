@@ -18,6 +18,7 @@ import time
 import sys
 from utils.metric import get_ner_fmeasure
 from tqdm import tqdm
+import my_utils
 
 def featureCapital(word):
     if word[0].isalpha() and word[0].isupper():
@@ -311,6 +312,10 @@ def train(data):
         print("Optimizer illegal: %s" % (data.optimizer))
         exit(0)
     best_dev = -10
+
+    if opt.tune_wordemb == False:
+        my_utils.freeze_net(model.word_hidden.wordrep.word_embedding)
+
     # data.HP_iteration = 1
     ## start training
     for idx in range(data.HP_iteration):
@@ -557,7 +562,8 @@ def translateNCRFPPintoBioc(doc_token, predict_results, file_name):
     for idx in range(sent_num):
         sent_length = len(predict_results[idx][0])
         sent_token = doc_token[(doc_token['sent_idx'] == idx)]
-        assert sent_token.shape[0] == sent_length
+
+        assert sent_token.shape[0] == sent_length, "file {}, sent {}".format(file_name, idx)
         labelSequence = []
 
         for idy in range(sent_length):
@@ -623,6 +629,10 @@ elif opt.whattodo==2:
     status = data.status.lower()
     data.HP_gpu = torch.cuda.is_available()
 
+    true_dir = data.model_dir[:data.model_dir.find('/')]
+    if not os.path.exists(true_dir):
+        os.makedirs(true_dir)
+
     data.initial_feature_alphabets()
     data.build_alphabet(data.train_dir)
     data.build_alphabet(data.dev_dir)
@@ -656,7 +666,9 @@ elif opt.whattodo==3:
         os.makedirs(ner_output_dir)
 
     test_token, test_entity, _, test_name = preprocess.loadPreprocessData(opt.testdata)
-    for i, doc_name in enumerate(test_name):
+
+    for i in tqdm(range(len(test_name))):
+        doc_name = test_name[i]
         doc_token = test_token[i]
         doc_entity = test_entity[i]
 

@@ -1,4 +1,4 @@
-import utils
+import my_utils
 import vocab
 import torch
 from torch.utils.data import DataLoader
@@ -36,7 +36,7 @@ def dataset_stat(tokens, entities, relations):
         sentence = doc_token[(doc_token['sent_idx'] == sent_idx)]
         while sentence.shape[0] != 0:
             for _, token in sentence.iterrows():
-                word_alphabet.add(utils.normalizeWord(token['text']))
+                word_alphabet.add(my_utils.normalizeWord(token['text']))
                 postag_alphabet.add(token['postag'])
 
             entities_in_sentence = doc_entity[(doc_entity['sent_idx'] == sent_idx)]
@@ -44,7 +44,7 @@ def dataset_stat(tokens, entities, relations):
                 entity_type_alphabet.add(entity['type'])
                 tk_idx = entity['tf_start']
                 while tk_idx <= entity['tf_end']:
-                    entity_alphabet.add(utils.normalizeWord(sentence.iloc[tk_idx, 0])) # assume 'text' is in 0 column
+                    entity_alphabet.add(my_utils.normalizeWord(sentence.iloc[tk_idx, 0])) # assume 'text' is in 0 column
                     tk_idx += 1
 
             sent_idx += 1
@@ -100,7 +100,7 @@ def test2(test_token, test_entity, test_relation, test_name, result_dumpdir):
                 relation_type = relation_vocab.lookup_id2str(result['type'])
                 if relation_type == '<unk>':
                     continue
-                elif utils.relationConstraint1(relation_type, former['type'], latter['type']) == False:
+                elif my_utils.relationConstraint1(relation_type, former['type'], latter['type']) == False:
                     continue
                 else:
                     bioc_relation = bioc.BioCRelation()
@@ -158,7 +158,7 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     pickle.dump(tok_num_betw_vocab, open(os.path.join(opt.pretrain, 'tok_num_betw_vocab.pkl'), "wb"), True)
     pickle.dump(et_num_vocab, open(os.path.join(opt.pretrain, 'et_num_vocab.pkl'), "wb"), True)
 
-    train_X, train_Y, _ = utils.getRelationInstance2(train_token, train_entity, train_relation, train_name, word_vocab, postag_vocab,
+    train_X, train_Y, _ = my_utils.getRelationInstance2(train_token, train_entity, train_relation, train_name, word_vocab, postag_vocab,
                                                      relation_vocab, entity_type_vocab,
                                                      entity_vocab, position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab)
     logging.info("training instance build completed, total {}".format(len(train_Y)))
@@ -166,7 +166,7 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     pickle.dump(train_Y, open(os.path.join(opt.pretrain, 'train_Y.pkl'), "wb"), True)
 
 
-    test_X, test_Y, test_other = utils.getRelationInstance2(test_token, test_entity, test_relation, test_name, word_vocab, postag_vocab,
+    test_X, test_Y, test_other = my_utils.getRelationInstance2(test_token, test_entity, test_relation, test_name, word_vocab, postag_vocab,
                                                             relation_vocab, entity_type_vocab,
                                                             entity_vocab, position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab)
     logging.info("test instance build completed, total {}".format(len(test_Y)))
@@ -200,7 +200,7 @@ def makeDatasetForEachClass(train_X, train_Y, relation_vocab, my_collate):
         y = train_Y_classified[class_name]
         train_numbers.append((class_name, len(y)))
 
-        train_set = utils.RelationDataset(x, y)
+        train_set = my_utils.RelationDataset(x, y)
         train_sets.append(train_set)
         train_sampler = torch.utils.data.sampler.RandomSampler(train_set)
         train_samples.append(train_sampler)
@@ -222,7 +222,7 @@ def makeDatasetWithoutUnknown(test_X, test_Y, relation_vocab, b_shuffle, my_coll
             test_X_remove_unk.append(x)
             test_Y_remove_unk.append(y)
 
-    test_set = utils.RelationDataset(test_X_remove_unk, test_Y_remove_unk)
+    test_set = my_utils.RelationDataset(test_X_remove_unk, test_Y_remove_unk)
     test_loader = DataLoader(test_set, opt.batch_size, shuffle=b_shuffle, collate_fn=my_collate)
     it = iter(test_loader)
     logging.info("instance after removing unknown, {}".format(len(test_Y_remove_unk)))
@@ -246,7 +246,7 @@ def makeDatasetUnknown(test_X, test_Y, relation_vocab, my_collate, ratio):
             test_X_remove_unk.append(x)
             test_Y_remove_unk.append(y)
 
-    test_set = utils.RelationDataset(test_X_remove_unk, test_Y_remove_unk)
+    test_set = my_utils.RelationDataset(test_X_remove_unk, test_Y_remove_unk)
 
     test_loader = DataLoader(test_set, opt.batch_size, shuffle=False, sampler=randomSampler(test_Y_remove_unk, ratio), collate_fn=my_collate)
     it = iter(test_loader)
@@ -271,11 +271,11 @@ def train():
     train_Y = pickle.load(open(os.path.join(opt.pretrain, 'train_Y.pkl'), 'rb'))
     logging.info("total training instance {}".format(len(train_Y)))
 
-    my_collate = utils.sorted_collate if opt.model == 'lstm' else utils.unsorted_collate
+    my_collate = my_utils.sorted_collate if opt.model == 'lstm' else my_utils.unsorted_collate
 
 
     if opt.strategy == 'all':
-        train_loader = DataLoader(utils.RelationDataset(train_X, train_Y),
+        train_loader = DataLoader(my_utils.RelationDataset(train_X, train_Y),
                                   opt.batch_size, shuffle=True, collate_fn=my_collate)
         train_iter = iter(train_loader)
         num_iter = len(train_loader)
@@ -301,7 +301,7 @@ def train():
     test_Other = pickle.load(open(os.path.join(opt.pretrain, 'test_Other.pkl'), 'rb'))
     logging.info("total test instance {}".format(len(test_Y)))
     #test_loader, _ = makeDatasetWithoutUnknown(test_X, test_Y, relation_vocab, False, my_collate)
-    test_loader = DataLoader(utils.RelationDataset(test_X, test_Y),
+    test_loader = DataLoader(my_utils.RelationDataset(test_X, test_Y),
                               opt.batch_size, shuffle=False, collate_fn=my_collate) # drop_last=True
 
 
@@ -337,7 +337,7 @@ def train():
     optimizer = optim.Adam(iter_parameter, lr=opt.learning_rate)
 
     if opt.tune_wordemb == False:
-        utils.freeze_layer(feature_extractor.word_emb)
+        my_utils.freeze_layer(feature_extractor.word_emb)
         #feature_extractor.word_emb.weight.requires_grad = False
 
     best_acc = 0.0
@@ -350,10 +350,10 @@ def train():
         for i in tqdm(range(num_iter)):
 
             if opt.strategy == 'all' or opt.strategy == 'no-unk' or opt.strategy == 'part-unk':
-                x2, x1, targets = utils.endless_get_next_batch_without_rebatch(train_loader, train_iter)
+                x2, x1, targets = my_utils.endless_get_next_batch_without_rebatch(train_loader, train_iter)
 
             elif opt.strategy == 'balance':
-                x2, x1, targets = utils.endless_get_next_batch(train_loaders, train_iters)
+                x2, x1, targets = my_utils.endless_get_next_batch(train_loaders, train_iters)
             else:
                 raise RuntimeError("unsupport training strategy")
 
@@ -379,7 +379,7 @@ def train():
             correct += (pred == targets).sum().item()
 
             if opt.strategy == 'part-unk':
-                x2, x1, targets = utils.endless_get_next_batch_without_rebatch(unk_loader, unk_iter)
+                x2, x1, targets = my_utils.endless_get_next_batch_without_rebatch(unk_loader, unk_iter)
 
                 hidden_features = feature_extractor.forward(x2, x1)
 

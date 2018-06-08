@@ -11,7 +11,7 @@ sent_tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
 import logging
 import os
 import shutil
-import utils
+import my_utils
 
 def preprocess(basedir):
     annotation_dir = join(basedir, 'annotations')
@@ -181,7 +181,7 @@ def get_text_file(filename):
 
 def text_tokenize(txt, sent_start):
 
-    tokens=utils.my_tokenize(txt)
+    tokens=my_utils.my_tokenize(txt)
     offset = 0
     for token in tokens:
         offset = txt.find(token, offset)
@@ -189,7 +189,7 @@ def text_tokenize(txt, sent_start):
         offset += len(token)
 
 def text_tokenize_and_postagging(txt, sent_start):
-    tokens=utils.my_tokenize(txt)
+    tokens=my_utils.my_tokenize(txt)
     pos_tags = nltk.pos_tag(tokens)
 
     offset = 0

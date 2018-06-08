@@ -5,7 +5,7 @@ import sortedcontainers
 import vocab
 import cPickle as pickle
 import os
-import utils
+import my_utils
 from torch.utils.data import DataLoader
 from feature_extractor import *
 import capsule
@@ -69,7 +69,7 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     pickle.dump(tok_num_betw_vocab, open(os.path.join(opt.pretrain, 'tok_num_betw_vocab.pkl'), "wb"), True)
     pickle.dump(et_num_vocab, open(os.path.join(opt.pretrain, 'et_num_vocab.pkl'), "wb"), True)
 
-    train_X, train_Y, _ = utils.getRelationInstance2(train_token, train_entity, train_relation, train_name, word_vocab, postag_vocab,
+    train_X, train_Y, _ = my_utils.getRelationInstance2(train_token, train_entity, train_relation, train_name, word_vocab, postag_vocab,
                                                      relation_vocab, entity_type_vocab,
                                                      entity_vocab, position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab)
     logging.info("training instance build completed, total {}".format(len(train_Y)))
@@ -77,7 +77,7 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     pickle.dump(train_Y, open(os.path.join(opt.pretrain, 'train_Y.pkl'), "wb"), True)
 
 
-    test_X, test_Y, test_other = utils.getRelationInstance2(test_token, test_entity, test_relation, test_name, word_vocab, postag_vocab,
+    test_X, test_Y, test_other = my_utils.getRelationInstance2(test_token, test_entity, test_relation, test_name, word_vocab, postag_vocab,
                                                             relation_vocab, entity_type_vocab,
                                                             entity_vocab, position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab)
     logging.info("test instance build completed, total {}".format(len(test_Y)))
@@ -97,7 +97,7 @@ def pretrain(train_token, train_entity, train_relation, train_name, test_token, 
     et_num_vocab = pickle.load(open(os.path.join(opt.pretrain, 'et_num_vocab.pkl'), 'rb'))
 
     for other in other_name:
-        other_X, other_Y, _ = utils.getRelationInstance2(other_token[other], other_entity[other], other_relation[other], other_name[other],
+        other_X, other_Y, _ = my_utils.getRelationInstance2(other_token[other], other_entity[other], other_relation[other], other_name[other],
                                                                        word_vocab, postag_vocab, relation_vocab, entity_type_vocab,
                                                      entity_vocab, position_vocab1, position_vocab2, tok_num_betw_vocab, et_num_vocab)
         logging.info("other {} instance build completed, total {}".format(other, len(other_Y)))
@@ -119,14 +119,14 @@ def train(other_dir):
     et_num_vocab = pickle.load(open(os.path.join(opt.pretrain, 'et_num_vocab.pkl'), 'rb'))
 
 
-    my_collate = utils.sorted_collate if opt.model == 'lstm' else utils.unsorted_collate
+    my_collate = my_utils.sorted_collate if opt.model == 'lstm' else my_utils.unsorted_collate
 
     # test only on the main domain
     test_X = pickle.load(open(os.path.join(opt.pretrain, 'test_X.pkl'), 'rb'))
     test_Y = pickle.load(open(os.path.join(opt.pretrain, 'test_Y.pkl'), 'rb'))
     test_Other = pickle.load(open(os.path.join(opt.pretrain, 'test_Other.pkl'), 'rb'))
     logging.info("total test instance {}".format(len(test_Y)))
-    test_loader = DataLoader(utils.RelationDataset(test_X, test_Y),
+    test_loader = DataLoader(my_utils.RelationDataset(test_X, test_Y),
                               opt.batch_size, shuffle=False, collate_fn=my_collate) # drop_last=True
 
     # train on the main as well as other domains
@@ -219,15 +219,15 @@ def train(other_dir):
 
             if opt.adv:
                 # D iterations
-                utils.freeze_net(F_s)
-                map(utils.freeze_net, F_d.values())
-                utils.freeze_net(C)
-                utils.unfreeze_net(D)
+                my_utils.freeze_net(F_s)
+                map(my_utils.freeze_net, F_d.values())
+                my_utils.freeze_net(C)
+                my_utils.unfreeze_net(D)
 
                 if opt.tune_wordemb == False:
-                    utils.freeze_net(F_s.word_emb)
+                    my_utils.freeze_net(F_s.word_emb)
                     for f_d in F_d.values():
-                        utils.freeze_net(f_d.word_emb)
+                        my_utils.freeze_net(f_d.word_emb)
                 # WGAN n_critic trick since D trains slower
                 n_critic = opt.n_critic
                 if opt.wgan_trick:
@@ -240,9 +240,9 @@ def train(other_dir):
                     # train on both labeled and unlabeled domains
                     for domain in opt.domains:
                         # targets not used
-                        x2, x1, _ = utils.endless_get_next_batch_without_rebatch(train_loaders[domain],
+                        x2, x1, _ = my_utils.endless_get_next_batch_without_rebatch(train_loaders[domain],
                                                                                        train_iters[domain])
-                        d_targets = utils.get_domain_label(opt.loss, domain, len(x2[1]))
+                        d_targets = my_utils.get_domain_label(opt.loss, domain, len(x2[1]))
                         shared_feat = F_s(x2, x1)
                         d_outputs = D(shared_feat)
                         # D accuracy
@@ -261,15 +261,15 @@ def train(other_dir):
                     optimizerD.step()
 
             # F&C iteration
-            utils.unfreeze_net(F_s)
-            map(utils.unfreeze_net, F_d.values())
-            utils.unfreeze_net(C)
+            my_utils.unfreeze_net(F_s)
+            map(my_utils.unfreeze_net, F_d.values())
+            my_utils.unfreeze_net(C)
             if opt.adv:
-                utils.freeze_net(D)
+                my_utils.freeze_net(D)
             if opt.tune_wordemb == False:
-                utils.freeze_net(F_s.word_emb)
+                my_utils.freeze_net(F_s.word_emb)
                 for f_d in F_d.values():
-                    utils.freeze_net(f_d.word_emb)
+                    my_utils.freeze_net(f_d.word_emb)
 
             F_s.zero_grad()
             for f_d in F_d.values():
@@ -278,7 +278,7 @@ def train(other_dir):
 
             for domain in opt.domains:
 
-                x2, x1, targets = utils.endless_get_next_batch_without_rebatch(train_loaders[domain], train_iters[domain])
+                x2, x1, targets = my_utils.endless_get_next_batch_without_rebatch(train_loaders[domain], train_iters[domain])
                 shared_feat = F_s(x2, x1)
                 domain_feat = F_d[domain](x2, x1)
                 features = torch.cat((shared_feat, domain_feat), dim=1)
@@ -298,7 +298,7 @@ def train(other_dir):
                 correct[domain] += (pred == targets).sum().data.item()
 
                 # training with unknown
-                x2, x1, targets = utils.endless_get_next_batch_without_rebatch(unk_loaders[domain], unk_iters[domain])
+                x2, x1, targets = my_utils.endless_get_next_batch_without_rebatch(unk_loaders[domain], unk_iters[domain])
                 shared_feat = F_s(x2, x1)
                 domain_feat = F_d[domain](x2, x1)
                 features = torch.cat((shared_feat, domain_feat), dim=1)
@@ -320,22 +320,22 @@ def train(other_dir):
             if opt.adv:
                 # update F with D gradients on all domains
                 for domain in opt.domains:
-                    x2, x1, _ = utils.endless_get_next_batch_without_rebatch(train_loaders[domain],
+                    x2, x1, _ = my_utils.endless_get_next_batch_without_rebatch(train_loaders[domain],
                                                                                    train_iters[domain])
                     shared_feat = F_s(x2, x1)
                     d_outputs = D(shared_feat)
                     if opt.loss.lower() == 'gr':
-                        d_targets = utils.get_domain_label(opt.loss, domain, len(x2[1]))
+                        d_targets = my_utils.get_domain_label(opt.loss, domain, len(x2[1]))
                         l_d = functional.nll_loss(d_outputs, d_targets)
                         if opt.lambd > 0:
                             l_d *= -opt.lambd
                     elif opt.loss.lower() == 'bs':
-                        d_targets = utils.get_random_domain_label(opt.loss, len(x2[1]))
+                        d_targets = my_utils.get_random_domain_label(opt.loss, len(x2[1]))
                         l_d = functional.kl_div(d_outputs, d_targets, size_average=False)
                         if opt.lambd > 0:
                             l_d *= opt.lambd
                     elif opt.loss.lower() == 'l2':
-                        d_targets = utils.get_random_domain_label(opt.loss, len(x2[1]))
+                        d_targets = my_utils.get_random_domain_label(opt.loss, len(x2[1]))
                         l_d = functional.mse_loss(d_outputs, d_targets)
                         if opt.lambd > 0:
                             l_d *= opt.lambd
