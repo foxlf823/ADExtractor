@@ -148,18 +148,23 @@ class CapsuleNet(nn.Module):
         # other features just reshape
         assert entity_type_vocab.emb_size % self.input_cap_dim == 0
 
-        self.entity_type_emb = entity_type_vocab.init_embed_layer()
+        if not opt.onlyuse_seqfeature:
+            self.entity_type_emb = entity_type_vocab.init_embed_layer()
 
-        self.entity_emb = entity_vocab.init_embed_layer()
-        self.dot_att = feature_extractor.DotAttentionLayer(entity_vocab.emb_size)
+            self.entity_emb = entity_vocab.init_embed_layer()
+            self.dot_att = feature_extractor.DotAttentionLayer(entity_vocab.emb_size)
 
-        self.tok_num_betw_emb = tok_num_betw_vocab.init_embed_layer()
+            self.tok_num_betw_emb = tok_num_betw_vocab.init_embed_layer()
 
-        self.et_num_emb = et_num_vocab.init_embed_layer()
+            self.et_num_emb = et_num_vocab.init_embed_layer()
 
-        # dense capsule settings
-        # context capsule number + other capsule number
-        self.input_cap_num = self.context_cap_num + 6 * (entity_type_vocab.emb_size // self.input_cap_dim)
+            # dense capsule settings
+            # context capsule number + other capsule number
+            self.input_cap_num = self.context_cap_num + 6 * (entity_type_vocab.emb_size // self.input_cap_dim)
+        else:
+            self.input_cap_num = self.context_cap_num
+
+
         self.digitcaps = DenseCapsule(in_num_caps=self.input_cap_num, in_dim_caps=self.input_cap_dim,
                                       out_num_caps=relation_vocab.vocab_size, out_dim_caps=16, routings=3)
 
@@ -168,7 +173,10 @@ class CapsuleNet(nn.Module):
         self.class_num = relation_vocab.vocab_size
 
         if opt.reconstruct:
-            self.input_size = context_feature_size + 6*entity_type_vocab.emb_size
+            if not opt.onlyuse_seqfeature:
+                self.input_size = context_feature_size + 6*entity_type_vocab.emb_size
+            else:
+                self.input_size = context_feature_size
             self.decoder = nn.Sequential(
                 nn.Linear(16 * relation_vocab.vocab_size, 256),
                 nn.ReLU(inplace=True),
@@ -186,16 +194,17 @@ class CapsuleNet(nn.Module):
 
         bz = hidden_features.size(0)
 
-        e1_t = self.entity_type_emb(e1_type)
-        e2_t = self.entity_type_emb(e2_type)
+        if not opt.onlyuse_seqfeature:
+            e1_t = self.entity_type_emb(e1_type)
+            e2_t = self.entity_type_emb(e2_type)
 
-        e1 = self.entity_emb(e1_token)
-        e1 = self.dot_att((e1, e1_length))
-        e2 = self.entity_emb(e2_token)
-        e2 = self.dot_att((e2, e2_length))
+            e1 = self.entity_emb(e1_token)
+            e1 = self.dot_att((e1, e1_length))
+            e2 = self.entity_emb(e2_token)
+            e2 = self.dot_att((e2, e2_length))
 
-        v_tok_num_betw = self.tok_num_betw_emb(tok_num_betw)
-        v_et_num = self.et_num_emb(et_num)
+            v_tok_num_betw = self.tok_num_betw_emb(tok_num_betw)
+            v_et_num = self.et_num_emb(et_num)
 
 
         # 1
@@ -226,16 +235,19 @@ class CapsuleNet(nn.Module):
 
         hidden_features = self.context_caps(hidden_features)
 
-        e1_t = e1_t.view(bz, -1, self.input_cap_dim)
-        e2_t = e2_t.view(bz, -1, self.input_cap_dim)
-        e1 = e1.view(bz, -1, self.input_cap_dim)
-        e2 = e2.view(bz, -1, self.input_cap_dim)
-        v_tok_num_betw = v_tok_num_betw.view(bz, -1, self.input_cap_dim)
-        v_et_num = v_et_num.view(bz, -1, self.input_cap_dim)
-        x = torch.cat((e1_t, e2_t, e1, e2, v_tok_num_betw, v_et_num), dim=1)
-        x = squash(x)
+        if not opt.onlyuse_seqfeature:
+            e1_t = e1_t.view(bz, -1, self.input_cap_dim)
+            e2_t = e2_t.view(bz, -1, self.input_cap_dim)
+            e1 = e1.view(bz, -1, self.input_cap_dim)
+            e2 = e2.view(bz, -1, self.input_cap_dim)
+            v_tok_num_betw = v_tok_num_betw.view(bz, -1, self.input_cap_dim)
+            v_et_num = v_et_num.view(bz, -1, self.input_cap_dim)
+            x = torch.cat((e1_t, e2_t, e1, e2, v_tok_num_betw, v_et_num), dim=1)
+            x = squash(x)
 
-        x = torch.cat((hidden_features, x), dim=1)
+            x = torch.cat((hidden_features, x), dim=1)
+        else:
+            x = hidden_features
 
 
         x = self.digitcaps(x)
@@ -272,18 +284,22 @@ class CapsuleNet(nn.Module):
                 _, _, _, _, e1_token, e2_token = x2
                 e1_length, e2_length, e1_type, e2_type, tok_num_betw, et_num, lengths = x1
 
-                e1_t = self.entity_type_emb(e1_type)
-                e2_t = self.entity_type_emb(e2_type)
+                if not opt.onlyuse_seqfeature:
 
-                e1 = self.entity_emb(e1_token)
-                e1 = self.dot_att((e1, e1_length))
-                e2 = self.entity_emb(e2_token)
-                e2 = self.dot_att((e2, e2_length))
+                    e1_t = self.entity_type_emb(e1_type)
+                    e2_t = self.entity_type_emb(e2_type)
 
-                v_tok_num_betw = self.tok_num_betw_emb(tok_num_betw)
-                v_et_num = self.et_num_emb(et_num)
+                    e1 = self.entity_emb(e1_token)
+                    e1 = self.dot_att((e1, e1_length))
+                    e2 = self.entity_emb(e2_token)
+                    e2 = self.dot_att((e2, e2_length))
 
-                x = torch.cat((hidden_features, e1_t, e2_t, e1, e2, v_tok_num_betw, v_et_num), dim=1)
+                    v_tok_num_betw = self.tok_num_betw_emb(tok_num_betw)
+                    v_et_num = self.et_num_emb(et_num)
+
+                    x = torch.cat((hidden_features, e1_t, e2_t, e1, e2, v_tok_num_betw, v_et_num), dim=1)
+                else:
+                    x = hidden_features.clone()
 
             L_recon = self.recon_loss(x_recon, x)
 

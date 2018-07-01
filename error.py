@@ -5,6 +5,7 @@ from options import opt
 import preprocess
 import trainandtest
 import pandas as pd
+import shutil
 
 def printTrainingInstanceAsSequence():
     logging.info("loading ... vocab")
@@ -33,7 +34,13 @@ def printTrainingInstanceAsSequence():
                     sequence += token + " "
             print(sequence)
 
-def errorAnalysisForRelation(type, goldDir, result, vocab_dir):
+def errorAnalysisForRelation(type, goldDir, result, vocab_dir, error_dir):
+    if os.path.exists(error_dir):
+            shutil.rmtree(error_dir)
+            os.makedirs(error_dir)
+    else:
+        os.makedirs(error_dir)
+
     test_token, test_entity, test_relation, test_name = preprocess.loadPreprocessData(goldDir)
 
     logging.info("loading ... vocab")
@@ -50,8 +57,9 @@ def errorAnalysisForRelation(type, goldDir, result, vocab_dir):
         doc_token = test_token[i]
         doc_relation = test_relation[i]
 
-        print('########### '+doc_name)
-        print('########### FP')
+        # print('########### '+doc_name)
+        # print('########### FP')
+        listFP = []
         for result in results:
 
             if doc_name == result['doc_name'] :
@@ -78,13 +86,21 @@ def errorAnalysisForRelation(type, goldDir, result, vocab_dir):
                     context_token = doc_token[
                         (doc_token['sent_idx'] >= former['sent_idx']) & (doc_token['sent_idx'] <= latter['sent_idx'])]
 
-                    print("{}: {} | {}: {}".format(former['id'], former['text'], latter['id'], latter['text']))
+                    # print("{}: {} | {}: {}".format(former['id'], former['text'], latter['id'], latter['text']))
                     sequence = ""
                     for _, token in context_token.iterrows():
-                        sequence += token['text'] + " "
-                    print(sequence)
+                        if token['start'] == former['start'] or token['start'] == latter['start']:
+                            sequence += "["
+                        sequence += token['text']
+                        if token['end'] == former['end'] or token['end'] == latter['end']:
+                            sequence += "]"
+                        sequence += " "
+                    # print(sequence)
+                    listFP.append("{} {} {} | {} {} {} \n{}\n".format(former['id'], former['type'], former['text'], latter['id'], latter['type'], latter['text'], sequence))
 
-        print('########### FN')
+
+        # print('########### FN')
+        listFN = []
         for _, relation in doc_relation.iterrows():
             if relation['type'] != type:
                 continue
@@ -113,11 +129,31 @@ def errorAnalysisForRelation(type, goldDir, result, vocab_dir):
                 context_token = doc_token[
                     (doc_token['sent_idx'] >= former['sent_idx']) & (doc_token['sent_idx'] <= latter['sent_idx'])]
 
-                print("{}: {} | {}: {}".format(former['id'], former['text'], latter['id'], latter['text']))
+                # print("{}: {} | {}: {}".format(former['id'], former['text'], latter['id'], latter['text']))
                 sequence = ""
                 for _, token in context_token.iterrows():
-                    sequence += token['text'] + " "
-                print(sequence)
+                    if token['start'] == former['start'] or token['start'] == latter['start']:
+                        sequence += "["
+                    sequence += token['text']
+                    if token['end'] == former['end'] or token['end'] == latter['end']:
+                        sequence += "]"
+                    sequence += " "
+                # print(sequence)
+                listFN.append(
+                    "{} {} {} | {} {} {} \n{}\n".format(former['id'], former['type'], former['text'], latter['id'],
+                                                        latter['type'], latter['text'], sequence))
+
+        if len(listFP)!= 0 or len(listFN)!= 0:
+            with open(os.path.join(error_dir, doc_name+".txt"), 'w') as f:
+                if len(listFP) != 0:
+                    f.write("########### FP\n")
+                for l in listFP:
+                    f.write(l)
+                f.write("\n")
+                if len(listFN) != 0:
+                    f.write("########### FN\n")
+                for l in listFN:
+                    f.write(l)
 
 
 
@@ -125,4 +161,8 @@ def errorAnalysisForRelation(type, goldDir, result, vocab_dir):
 
 
 
-errorAnalysisForRelation("adverse", './', 'cnn_capsule_recon2/results.pkl', 'pretrain_pubmed')
+errorAnalysisForRelation("adverse", '/Users/feili/Desktop/umass/MADE/made_test_data', 'output_other_adv/results.pkl', 'pretrain_other', './error_analysis/cancer_adverse')
+errorAnalysisForRelation("reason", '/Users/feili/Desktop/umass/MADE/made_test_data', 'output_other_adv/results.pkl', 'pretrain_other', './error_analysis/cancer_reason')
+
+# errorAnalysisForRelation("adverse", '/Users/feili/Desktop/umass/bioC_data/Cardio_test', 'output_other_made/results.pkl', 'pretrain_other_made', './error_analysis/cardio_adverse')
+# errorAnalysisForRelation("reason", '/Users/feili/Desktop/umass/bioC_data/Cardio_test', 'output_other_made/results.pkl', 'pretrain_other_made', './error_analysis/cardio_reason')
