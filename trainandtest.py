@@ -343,7 +343,7 @@ def train():
     best_acc = 0.0
     logging.info("start training ...")
     for epoch in range(opt.max_epoch):
-
+        feature_extractor.train()
         m.train()
         correct, total = 0, 0
 
@@ -420,6 +420,7 @@ def train():
 
 def evaluate(feature_extractor, m, loader, other):
     #results = []
+    feature_extractor.eval()
     m.eval()
     it = iter(loader)
     start, end = 0, 0
